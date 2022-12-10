@@ -395,7 +395,8 @@ ELSEIF("${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
     SET(OPT_FLAG -O0 -g ${XPREP} ${OMP_FLAG} -fstack-check -fno-omit-frame-pointer -fno-optimize-sibling-calls
         -Werror -Werror=return-type)
 ELSE()
-    SET(OPT_FLAG -O3 -funroll-loops ${XPREP} ${OMP_FLAG} -Werror -Werror=return-type)
+    #SET(OPT_FLAG -O3 -funroll-loops ${XPREP} ${OMP_FLAG} -Werror -Werror=return-type)
+    SET(OPT_FLAG -O3 -funroll-loops ${XPREP} ${OMP_FLAG})
 ENDIF()
 
 IF ((NOT APPLE) AND (NOT WIN32) AND (NOT (CMAKE_CXX_COMPILER_ID STREQUAL "Intel")))
