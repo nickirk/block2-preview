@@ -22,8 +22,10 @@ Spin-free EOM-CCSD (EE/IP/EA) with equations derived on the fly.
 Authors:  Huanchen Zhai
           Johannes Tölle    Dec 4-6, 2022
 """
-
-from rccsd import hbar, ex1, ex2, P, PT, SP, FC, fix_eri_permutations, MapStrStr
+try:
+    from .rccsd import hbar, ex1, ex2, P, PT, SP, FC, fix_eri_permutations, MapStrStr
+except ImportError:
+    from rccsd import hbar, ex1, ex2, P, PT, SP, FC, fix_eri_permutations, MapStrStr
 import numpy as np
 import functools
 
@@ -52,6 +54,8 @@ rea = SP(rea1 + rea2)
 # eom-ee-ccsd
 eomee_r1_eq = FC(ex1 * (hbar ^ ree))
 eomee_r2_eq = FC(ex2 * (hbar ^ ree))
+eomee_r1_left_eq = FC(ree.conjugate() * (hbar ^ ex1.conjugate()))
+eomee_r2_left_eq = FC(ree.conjugate() * (hbar ^ ex2.conjugate()))
 eomee_r1_diag_eq = FC(ex1 * (hbar ^ ex1.conjugate()))
 eomee_r2_diag_eq = FC(ex2 * (hbar ^ exee2_d.conjugate()))
 
@@ -80,6 +84,8 @@ ijabmap = MapStrStr({"k": "i", "l": "j", "c": "a", "d": "b"})
 
 eomee_r1_eq = 0.5 * eomee_r1_eq
 eomee_r2_eq = SP((1.0 / 3.0) * (eomee_r2_eq + 0.5 * eomee_r2_eq.index_map(ijmap)))
+eomee_r1_left_eq = 0.5 * eomee_r1_left_eq
+eomee_r2_left_eq = SP((1.0 / 3.0) * (eomee_r2_left_eq + 0.5 * eomee_r2_left_eq.index_map(ijmap)))
 eomee_r1_diag_eq = 0.5 * eomee_r1_diag_eq
 eomee_r2_diag_eq = SP(
     (1.0 / 3.0) * (eomee_r2_diag_eq + 0.5 * eomee_r2_diag_eq.index_map(ijmap))
@@ -116,6 +122,8 @@ eomea_r2_diag_eq = SP(eomea_r2_diag_eq.index_map(jabmap))
 for eq in [
     eomee_r1_eq,
     eomee_r2_eq,
+    eomee_r1_left_eq,
+    eomee_r2_left_eq,
     eomee_r1_diag_eq,
     eomee_r2_diag_eq,
     eomip_r1_eq,
@@ -198,6 +206,10 @@ def wick_eomccsd_matvec(eom, eq_type, vector, imds=None, diag=None):
         eom_eq = eomee_r1_eq.to_einsum(PT("hr1[ia]"))
         eom_eq += eomee_r2_eq.to_einsum(PT("hr2[ijab]"))
         r_amps = {"rIE": r1, "rIIEE": r2}
+    elif eq_type == "lee":
+        eom_eq = eomee_r1_left_eq.to_einsum(PT("hr1[ia]"))
+        eom_eq += eomee_r2_left_eq.to_einsum(PT("hr2[ijab]"))
+        r_amps = {"rIE": r1, "rIIEE": r2}
     elif eq_type == "ip":
         eom_eq = eomip_r1_eq.to_einsum(PT("hr1[i]"))
         eom_eq += eomip_r2_eq.to_einsum(PT("hr2[ijb]"))
@@ -243,7 +255,16 @@ def wick_eomccsd_matvec(eom, eq_type, vector, imds=None, diag=None):
 
 class WickREOMEESinglet(eom_rccsd.EOMEESinglet):
     matvec = functools.partialmethod(wick_eomccsd_matvec, "ee")
+    l_matvec = functools.partialmethod(wick_eomccsd_matvec, "lee")
     get_diag = functools.partialmethod(wick_eomccsd_diag, "ee")
+    def gen_matvec(self, imds=None, diag=None, left=False, **kwargs):
+        if imds is None: imds = self.make_imds()
+        if diag is None: diag = self.get_diag(imds)[0]
+        if left:
+            matvec = lambda xs: [self.l_matvec(x, imds, diag) for x in xs]
+        else:
+            matvec = lambda xs: [self.matvec(x, imds, diag) for x in xs]
+        return matvec, diag
 
 
 class WickREOMIP(eom_rccsd.EOMIP):

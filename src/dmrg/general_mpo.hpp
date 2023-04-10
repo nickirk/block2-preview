@@ -26,6 +26,7 @@
 #include "../core/fp_codec.hpp"
 #include "../core/hamiltonian.hpp"
 #include "../core/integral.hpp"
+#include "../core/iterative_matrix_functions.hpp"
 #include "../core/spin_permutation.hpp"
 #include "mpo.hpp"
 #include <array>
@@ -156,7 +157,7 @@ template <typename FL> struct GeneralFCIDUMP {
     vector<vector<FL>> data;
     ElemOpTypes elem_type;
     bool order_adjusted = false;
-    GeneralFCIDUMP() {}
+    GeneralFCIDUMP() : elem_type(ElemOpTypes::SU2) {}
     GeneralFCIDUMP(ElemOpTypes elem_type) : elem_type(elem_type) {}
     virtual ~GeneralFCIDUMP() = default;
     static shared_ptr<GeneralFCIDUMP>
@@ -270,7 +271,9 @@ template <typename FL> struct GeneralFCIDUMP {
     }
     // array must have the min strides == 1
     void add_sum_term(const FL *vals, size_t len, const vector<int> &shape,
-                      const vector<size_t> &strides, FP cutoff = (FP)0.0) {
+                      const vector<size_t> &strides, FP cutoff = (FP)0.0,
+                      FL factor = (FL)1.0,
+                      const vector<int> &orb_sym = vector<int>()) {
         int ntg = threading->activate_global();
         vector<size_t> lens(ntg + 1, 0);
         const size_t plen = len / ntg + !!(len % ntg);
@@ -278,7 +281,7 @@ template <typename FL> struct GeneralFCIDUMP {
         {
             int tid = threading->get_thread_id();
             for (size_t i = plen * tid; i < min(len, plen * (tid + 1)); i++)
-                lens[tid] += (abs(vals[i]) > cutoff);
+                lens[tid] += (abs(factor * vals[i]) > cutoff);
         }
         lens[ntg] = accumulate(&lens[0], &lens[ntg], (size_t)0);
         indices.push_back(vector<uint16_t>(lens[ntg] * shape.size()));
@@ -289,14 +292,28 @@ template <typename FL> struct GeneralFCIDUMP {
             size_t istart = 0;
             for (int i = 0; i < tid; i++)
                 istart += lens[i];
-            for (size_t i = plen * tid; i < min(len, plen * (tid + 1)); i++)
-                if (abs(vals[i]) > cutoff) {
-                    for (int j = 0; j < (int)shape.size(); j++)
-                        indices.back()[istart * shape.size() + j] =
-                            i / strides[j] % shape[j];
-                    data.back()[istart] = vals[i];
-                    istart++;
-                }
+            if (orb_sym.size() == 0) {
+                for (size_t i = plen * tid; i < min(len, plen * (tid + 1)); i++)
+                    if (abs(factor * vals[i]) > cutoff) {
+                        for (int j = 0; j < (int)shape.size(); j++)
+                            indices.back()[istart * shape.size() + j] =
+                                i / strides[j] % shape[j];
+                        data.back()[istart] = factor * vals[i];
+                        istart++;
+                    }
+            } else {
+                for (size_t i = plen * tid; i < min(len, plen * (tid + 1)); i++)
+                    if (abs(factor * vals[i]) > cutoff) {
+                        int irrep = 0;
+                        for (int j = 0; j < (int)shape.size(); j++) {
+                            indices.back()[istart * shape.size() + j] =
+                                i / strides[j] % shape[j];
+                            irrep ^= orb_sym[i / strides[j] % shape[j]];
+                        }
+                        data.back()[istart] = factor * vals[i] * (FL)(!irrep);
+                        istart++;
+                    }
+            }
             for (int i = 0; i < tid + 1; i++)
                 istart -= lens[i];
             assert(istart == 0);
@@ -314,38 +331,40 @@ template <typename FL> struct GeneralFCIDUMP {
     shared_ptr<GeneralFCIDUMP>
     adjust_order(const vector<shared_ptr<SpinPermScheme>> &schemes =
                      vector<shared_ptr<SpinPermScheme>>(),
-                 bool merge = true, FP cutoff = (FP)0.0) const {
+                 bool merge = true, bool is_drt = false,
+                 FP cutoff = (FP)0.0) const {
         vector<shared_ptr<SpinPermScheme>> psch = schemes;
         if (psch.size() < exprs.size()) {
             psch.resize(exprs.size(), nullptr);
             for (size_t ix = 0; ix < exprs.size(); ix++)
                 psch[ix] = make_shared<SpinPermScheme>(
                     exprs[ix], elem_type == ElemOpTypes::SU2,
-                    elem_type != ElemOpTypes::SGB);
+                    elem_type != ElemOpTypes::SGB, false, is_drt);
         }
         unordered_map<string, int> r_str_mp;
         vector<vector<uint16_t>> r_indices;
         vector<vector<FL>> r_data;
         for (size_t ix = 0; ix < exprs.size(); ix++) {
             shared_ptr<SpinPermScheme> scheme = psch[ix];
-            unordered_map<vector<uint16_t>, pair<int, int>,
-                          vector_uint16_hasher>
+            unordered_map<vector<uint16_t>, int, vector_uint16_hasher>
                 idx_pattern_mp;
+            vector<unordered_map<vector<uint16_t>, int, vector_uint16_hasher>>
+                idx_perm_mp((int)scheme->data.size());
             int kk = 0, nn = (int)scheme->index_patterns[0].size();
-            for (int i = 0; i < (int)scheme->data.size(); i++)
+            for (int i = 0; i < (int)scheme->data.size(); i++) {
+                idx_pattern_mp[scheme->index_patterns[i]] = i;
                 for (auto &j : scheme->data[i])
-                    if (!idx_pattern_mp.count(j.first))
-                        idx_pattern_mp[j.first] = make_pair(kk++, i);
-            vector<vector<uint16_t>> idx_pats(idx_pattern_mp.size());
-            for (auto &x : idx_pattern_mp)
-                idx_pats[x.second.first] = x.first;
+                    idx_perm_mp[i][j.first] = kk++;
+            }
+            vector<pair<int, vector<uint16_t>>> idx_pats(kk);
+            for (int i = 0; i < (int)scheme->data.size(); i++)
+                for (auto &x : idx_perm_mp[i])
+                    idx_pats[x.second] = make_pair(i, x.first);
             // first divide all indices according to scheme classes
-            vector<vector<int>> idx_patidx(idx_pattern_mp.size());
+            vector<vector<int>> idx_patidx(kk);
             if (indices.size() == 0)
                 continue;
-            vector<uint16_t> idx_idx(nn);
-            vector<uint16_t> idx_pat(nn);
-            vector<uint16_t> idx_mat(max(1, nn));
+            vector<uint16_t> idx_idx(nn), idx_pat(nn), idx_mat(nn);
             for (size_t i = 0; i < (nn == 0 ? 1 : indices[ix].size());
                  i += (nn == 0 ? 1 : nn)) {
                 for (int j = 0; j < nn; j++)
@@ -355,14 +374,16 @@ template <typename FL> struct GeneralFCIDUMP {
                          return this->indices[ix][i + x] <
                                 this->indices[ix][i + y];
                      });
-                idx_mat[0] = 0;
+                if (nn >= 1)
+                    idx_mat[0] = 0;
                 for (int j = 1; j < nn; j++)
                     idx_mat[j] =
                         idx_mat[j - 1] + (indices[ix][i + idx_idx[j]] !=
                                           indices[ix][i + idx_idx[j - 1]]);
                 for (int j = 0; j < nn; j++)
-                    idx_pat[idx_idx[j]] = idx_mat[j];
-                idx_patidx[idx_pattern_mp.at(idx_pat).first].push_back(i);
+                    idx_pat[idx_idx[j]] = j;
+                idx_patidx[idx_perm_mp[idx_pattern_mp.at(idx_mat)].at(idx_pat)]
+                    .push_back(i);
             }
             kk = (int)r_str_mp.size();
             // collect all reordered expr types
@@ -376,10 +397,8 @@ template <typename FL> struct GeneralFCIDUMP {
             if (r_data.size() < r_str_mp.size())
                 r_data.resize(r_str_mp.size());
             for (size_t ip = 0; ip < idx_patidx.size(); ip++) {
-                vector<uint16_t> &ipat = idx_pats[ip];
-                int schi = idx_pattern_mp.at(ipat).second;
                 vector<pair<double, string>> &strd =
-                    scheme->data[idx_pattern_mp.at(ipat).second].at(ipat);
+                    scheme->data[idx_pats[ip].first].at(idx_pats[ip].second);
                 for (auto i : idx_patidx[ip]) {
                     idx_pat = vector<uint16_t>(indices[ix].begin() + i,
                                                indices[ix].begin() + i + nn);
@@ -552,7 +571,6 @@ struct GeneralHamiltonian<S, FL, typename S::is_sz_t> : Hamiltonian<S, FL> {
         : Hamiltonian<S, FL>(vacuum, n_sites, orb_sym) {
         // SZ does not need CG factors
         opf = make_shared<OperatorFunctions<S, FL>>(make_shared<CG<S>>());
-        opf->cg->initialize();
         basis.resize(n_sites);
         site_op_infos.resize(n_sites);
         site_norm_ops.resize(n_sites);
@@ -567,7 +585,7 @@ struct GeneralHamiltonian<S, FL, typename S::is_sz_t> : Hamiltonian<S, FL> {
                    ? SiteBasis<S>::get(orb_sym[m])
                    : SiteBasis<S>::get(orb_sym[m], orb_sym[m + n_sites]);
     }
-    void init_site_ops() {
+    virtual void init_site_ops() {
         shared_ptr<VectorAllocator<uint32_t>> i_alloc =
             make_shared<VectorAllocator<uint32_t>>();
         shared_ptr<VectorAllocator<FP>> d_alloc =
@@ -698,7 +716,7 @@ struct GeneralHamiltonian<S, FL, typename S::is_sz_t> : Hamiltonian<S, FL> {
             }
         }
     }
-    void get_site_string_ops(
+    virtual void get_site_string_ops(
         uint16_t m,
         unordered_map<string, shared_ptr<SparseMatrix<S, FL>>> &ops) {
         shared_ptr<VectorAllocator<FP>> d_alloc =
@@ -726,9 +744,9 @@ struct GeneralHamiltonian<S, FL, typename S::is_sz_t> : Hamiltonian<S, FL> {
             }
         }
     }
-    static vector<vector<S>> init_string_quanta(const vector<string> &exprs,
-                                                const vector<uint16_t> &term_l,
-                                                S left_vacuum) {
+    virtual vector<vector<S>> init_string_quanta(const vector<string> &exprs,
+                                                 const vector<uint16_t> &term_l,
+                                                 S left_vacuum) {
         vector<vector<S>> r(exprs.size());
         for (size_t ix = 0; ix < exprs.size(); ix++) {
             r[ix].resize(term_l[ix] + 1);
@@ -753,8 +771,10 @@ struct GeneralHamiltonian<S, FL, typename S::is_sz_t> : Hamiltonian<S, FL> {
         }
         return r;
     }
-    pair<S, S> get_string_quanta(const vector<S> &ref, const string &expr,
-                                 const uint16_t *idxs, uint16_t k) const {
+    virtual pair<S, S> get_string_quanta(const vector<S> &ref,
+                                         const string &expr,
+                                         const uint16_t *idxs,
+                                         uint16_t k) const {
         S l = ref[k], r = ref.back() - l;
         for (uint16_t j = 0; j < (uint16_t)expr.length(); j++) {
             typename S::pg_t ipg = orb_sym[idxs[j]];
@@ -769,6 +789,25 @@ struct GeneralHamiltonian<S, FL, typename S::is_sz_t> : Hamiltonian<S, FL> {
                 r.set_pg(S::pg_mul(r.pg(), ipg));
         }
         return make_pair(l, r);
+    }
+    S get_string_quantum(const string &expr,
+                         const uint16_t *idxs) const override {
+        S r(0, 0, 0);
+        for (uint16_t j = 0; j < (uint16_t)expr.length(); j++) {
+            typename S::pg_t ipg = idxs != nullptr ? orb_sym[idxs[j]] : 0;
+            if (idxs != nullptr && orb_sym.size() == n_sites * 2 &&
+                (expr[j] == 'C' || expr[j] == 'D'))
+                ipg = orb_sym[idxs[j] + n_sites];
+            if (expr[j] == 'c')
+                r = r + S(1, 1, ipg);
+            else if (expr[j] == 'C')
+                r = r + S(1, -1, ipg);
+            else if (expr[j] == 'd')
+                r = r + S(-1, -1, S::pg_inv(ipg));
+            else if (expr[j] == 'D')
+                r = r + S(-1, 1, S::pg_inv(ipg));
+        }
+        return r;
     }
     static string get_sub_expr(const string &expr, int i, int j) {
         return expr.substr(i, j - i);
@@ -785,7 +824,6 @@ struct GeneralHamiltonian<S, FL, typename S::is_sz_t> : Hamiltonian<S, FL> {
                 site_op_infos[m][j].second->deallocate();
         for (int16_t m = n_sites - 1; m >= 0; m--)
             basis[m]->deallocate();
-        opf->cg->deallocate();
         Hamiltonian<S, FL>::deallocate();
     }
 };
@@ -818,8 +856,7 @@ struct GeneralHamiltonian<S, FL, typename S::is_su2_t> : Hamiltonian<S, FL> {
         const vector<typename S::pg_t> &orb_sym = vector<typename S::pg_t>(),
         int twos = -1)
         : Hamiltonian<S, FL>(vacuum, n_sites, orb_sym), twos(twos) {
-        opf = make_shared<OperatorFunctions<S, FL>>(make_shared<CG<S>>(100));
-        opf->cg->initialize();
+        opf = make_shared<OperatorFunctions<S, FL>>(make_shared<CG<S>>());
         basis.resize(n_sites);
         site_op_infos.resize(n_sites);
         site_norm_ops.resize(n_sites);
@@ -834,7 +871,7 @@ struct GeneralHamiltonian<S, FL, typename S::is_su2_t> : Hamiltonian<S, FL> {
         else // heisenberg spin model
             return make_shared<StateInfo<S>>(S(twos, twos, orb_sym[m]));
     }
-    void init_site_ops() {
+    virtual void init_site_ops() {
         shared_ptr<VectorAllocator<uint32_t>> i_alloc =
             make_shared<VectorAllocator<uint32_t>>();
         shared_ptr<VectorAllocator<FP>> d_alloc =
@@ -973,15 +1010,15 @@ struct GeneralHamiltonian<S, FL, typename S::is_su2_t> : Hamiltonian<S, FL> {
             return r;
         }
     }
-    void get_site_string_ops(
+    virtual void get_site_string_ops(
         uint16_t m,
         unordered_map<string, shared_ptr<SparseMatrix<S, FL>>> &ops) {
         for (auto &p : ops)
             p.second = get_site_string_op(m, p.first);
     }
-    static vector<vector<S>> init_string_quanta(const vector<string> &exprs,
-                                                const vector<uint16_t> &term_l,
-                                                S left_vacuum) {
+    virtual vector<vector<S>> init_string_quanta(const vector<string> &exprs,
+                                                 const vector<uint16_t> &term_l,
+                                                 S left_vacuum) {
         vector<vector<S>> r(exprs.size());
         for (size_t ix = 0; ix < exprs.size(); ix++) {
             r[ix].resize(term_l[ix] + 1, S(0, 0, 0));
@@ -1048,8 +1085,10 @@ struct GeneralHamiltonian<S, FL, typename S::is_su2_t> : Hamiltonian<S, FL> {
         }
         return r;
     }
-    pair<S, S> get_string_quanta(const vector<S> &ref, const string &expr,
-                                 const uint16_t *idxs, uint16_t k) const {
+    virtual pair<S, S> get_string_quanta(const vector<S> &ref,
+                                         const string &expr,
+                                         const uint16_t *idxs,
+                                         uint16_t k) const {
         S l = ref[k], r = ref.back() - l;
         for (uint16_t j = 0, i = 0; j < (uint16_t)expr.length(); j++) {
             if (expr[j] != 'C' && expr[j] != 'D')
@@ -1065,33 +1104,26 @@ struct GeneralHamiltonian<S, FL, typename S::is_su2_t> : Hamiltonian<S, FL> {
         }
         return make_pair(l, r);
     }
-    static string get_sub_expr(const string &expr, int i, int j) {
-        int cnt = 0, depth = 0, start = -1, extra = 0;
-        stringstream ss;
-        for (auto &c : expr) {
-            if (c == '(') {
-                depth++;
-                if (cnt == i && start == -1 && j > i + 1)
-                    start = depth;
-                if (cnt >= i && cnt < j && start != -1 && depth >= start)
-                    ss << c, extra++;
-            } else if (c == ')') {
-                depth--;
-                if (cnt >= i && cnt <= j && start != -1 && depth + 1 >= start)
-                    ss << c, extra--;
-            } else if (c >= '0' && c <= '9') {
-                if (cnt >= i && cnt <= j && start != -1 && depth + 1 >= start)
-                    ss << c;
-            } else if (c == '+') {
-                if (cnt >= i && cnt < j && start != -1 && depth >= start)
-                    ss << c;
-            } else if (c == 'C' || c == 'D' || c == 'T') {
-                if (cnt >= i && cnt < j)
-                    ss << c;
-                cnt++;
-            }
+    S get_string_quantum(const string &expr,
+                         const uint16_t *idxs) const override {
+        S r(0, 0, 0);
+        for (uint16_t j = 0, i = 0; j < (uint16_t)expr.length(); j++) {
+            if (expr[j] != 'C' && expr[j] != 'D')
+                continue;
+            typename S::pg_t ipg = idxs != nullptr ? orb_sym[idxs[i]] : 0;
+            if (expr[j] == 'C')
+                r = r + S(1, 1, ipg);
+            else if (expr[j] == 'D')
+                r = r + S(-1, 1, S::pg_inv(ipg));
+            i++;
         }
-        return ss.str().substr(extra);
+        int rr = SpinPermRecoupling::get_target_twos(expr);
+        r.set_twos(rr);
+        r.set_twos_low(rr);
+        return r;
+    }
+    static string get_sub_expr(const string &expr, int i, int j) {
+        return SpinPermRecoupling::get_sub_expr(expr, i, j);
     }
     void deallocate() override {
         for (auto &op_prims : this->op_prims)
@@ -1105,7 +1137,6 @@ struct GeneralHamiltonian<S, FL, typename S::is_su2_t> : Hamiltonian<S, FL> {
                 site_op_infos[m][j].second->deallocate();
         for (int16_t m = n_sites - 1; m >= 0; m--)
             basis[m]->deallocate();
-        opf->cg->deallocate();
         Hamiltonian<S, FL>::deallocate();
     }
 };
@@ -1140,7 +1171,6 @@ struct GeneralHamiltonian<S, FL, typename enable_if<S::GIF>::type>
         : Hamiltonian<S, FL>(vacuum, n_sites, orb_sym) {
         // SZ does not need CG factors
         opf = make_shared<OperatorFunctions<S, FL>>(make_shared<CG<S>>());
-        opf->cg->initialize();
         basis.resize(n_sites);
         site_op_infos.resize(n_sites);
         site_norm_ops.resize(n_sites);
@@ -1152,7 +1182,7 @@ struct GeneralHamiltonian<S, FL, typename enable_if<S::GIF>::type>
     virtual shared_ptr<StateInfo<S>> get_site_basis(uint16_t m) const {
         return SiteBasis<S>::get(orb_sym[m]);
     }
-    void init_site_ops() {
+    virtual void init_site_ops() {
         shared_ptr<VectorAllocator<uint32_t>> i_alloc =
             make_shared<VectorAllocator<uint32_t>>();
         shared_ptr<VectorAllocator<FP>> d_alloc =
@@ -1218,7 +1248,7 @@ struct GeneralHamiltonian<S, FL, typename enable_if<S::GIF>::type>
                     op_prims.at(orb_sym[m])[t]->data);
             }
     }
-    void get_site_string_ops(
+    virtual void get_site_string_ops(
         uint16_t m,
         unordered_map<string, shared_ptr<SparseMatrix<S, FL>>> &ops) {
         shared_ptr<VectorAllocator<FP>> d_alloc =
@@ -1246,9 +1276,9 @@ struct GeneralHamiltonian<S, FL, typename enable_if<S::GIF>::type>
             }
         }
     }
-    static vector<vector<S>> init_string_quanta(const vector<string> &exprs,
-                                                const vector<uint16_t> &term_l,
-                                                S left_vacuum) {
+    virtual vector<vector<S>> init_string_quanta(const vector<string> &exprs,
+                                                 const vector<uint16_t> &term_l,
+                                                 S left_vacuum) {
         vector<vector<S>> r(exprs.size());
         for (size_t ix = 0; ix < exprs.size(); ix++) {
             r[ix].resize(term_l[ix] + 1);
@@ -1267,8 +1297,10 @@ struct GeneralHamiltonian<S, FL, typename enable_if<S::GIF>::type>
         }
         return r;
     }
-    pair<S, S> get_string_quanta(const vector<S> &ref, const string &expr,
-                                 const uint16_t *idxs, uint16_t k) const {
+    virtual pair<S, S> get_string_quanta(const vector<S> &ref,
+                                         const string &expr,
+                                         const uint16_t *idxs,
+                                         uint16_t k) const {
         S l = ref[k], r = ref.back() - l;
         for (uint16_t j = 0; j < (uint16_t)expr.length(); j++) {
             typename S::pg_t ipg = orb_sym[idxs[j]];
@@ -1280,6 +1312,18 @@ struct GeneralHamiltonian<S, FL, typename enable_if<S::GIF>::type>
                 r.set_pg(S::pg_mul(r.pg(), ipg));
         }
         return make_pair(l, r);
+    }
+    S get_string_quantum(const string &expr,
+                         const uint16_t *idxs) const override {
+        S r(0, 0);
+        for (uint16_t j = 0; j < (uint16_t)expr.length(); j++) {
+            typename S::pg_t ipg = idxs != nullptr ? orb_sym[idxs[j]] : 0;
+            if (expr[j] == 'C')
+                r = r + S(1, ipg);
+            else if (expr[j] == 'D')
+                r = r + S(-1, S::pg_inv(ipg));
+        }
+        return r;
     }
     static string get_sub_expr(const string &expr, int i, int j) {
         return expr.substr(i, j - i);
@@ -1296,7 +1340,6 @@ struct GeneralHamiltonian<S, FL, typename enable_if<S::GIF>::type>
                 site_op_infos[m][j].second->deallocate();
         for (int16_t m = n_sites - 1; m >= 0; m--)
             basis[m]->deallocate();
-        opf->cg->deallocate();
         Hamiltonian<S, FL>::deallocate();
     }
 };
@@ -1332,7 +1375,6 @@ struct GeneralHamiltonian<S, FL, typename enable_if<!S::GIF>::type>
         : Hamiltonian<S, FL>(vacuum, n_sites, orb_sym), twos(twos) {
         // SZ does not need CG factors
         opf = make_shared<OperatorFunctions<S, FL>>(make_shared<CG<S>>());
-        opf->cg->initialize();
         if (orb_sym.size() == 0)
             Hamiltonian<S, FL>::orb_sym.resize(n_sites);
         basis.resize(n_sites);
@@ -1352,7 +1394,7 @@ struct GeneralHamiltonian<S, FL, typename enable_if<!S::GIF>::type>
         b->sort_states();
         return b;
     }
-    void init_site_ops() {
+    virtual void init_site_ops() {
         shared_ptr<VectorAllocator<uint32_t>> i_alloc =
             make_shared<VectorAllocator<uint32_t>>();
         shared_ptr<VectorAllocator<FP>> d_alloc =
@@ -1418,7 +1460,7 @@ struct GeneralHamiltonian<S, FL, typename enable_if<!S::GIF>::type>
                     op_prims.at(orb_sym[m])[t]->data);
             }
     }
-    void get_site_string_ops(
+    virtual void get_site_string_ops(
         uint16_t m,
         unordered_map<string, shared_ptr<SparseMatrix<S, FL>>> &ops) {
         shared_ptr<VectorAllocator<FP>> d_alloc =
@@ -1446,9 +1488,9 @@ struct GeneralHamiltonian<S, FL, typename enable_if<!S::GIF>::type>
             }
         }
     }
-    static vector<vector<S>> init_string_quanta(const vector<string> &exprs,
-                                                const vector<uint16_t> &term_l,
-                                                S left_vacuum) {
+    virtual vector<vector<S>> init_string_quanta(const vector<string> &exprs,
+                                                 const vector<uint16_t> &term_l,
+                                                 S left_vacuum) {
         vector<vector<S>> r(exprs.size());
         for (size_t ix = 0; ix < exprs.size(); ix++) {
             r[ix].resize(term_l[ix] + 1);
@@ -1470,8 +1512,10 @@ struct GeneralHamiltonian<S, FL, typename enable_if<!S::GIF>::type>
         }
         return r;
     }
-    pair<S, S> get_string_quanta(const vector<S> &ref, const string &expr,
-                                 const uint16_t *idxs, uint16_t k) const {
+    virtual pair<S, S> get_string_quanta(const vector<S> &ref,
+                                         const string &expr,
+                                         const uint16_t *idxs,
+                                         uint16_t k) const {
         S l = ref[k], r = ref.back() - l;
         for (uint16_t j = 0; j < (uint16_t)expr.length(); j++) {
             typename S::pg_t ipg = orb_sym[idxs[j]];
@@ -1485,6 +1529,20 @@ struct GeneralHamiltonian<S, FL, typename enable_if<!S::GIF>::type>
                 r.set_pg(S::pg_mul(r.pg(), ipg));
         }
         return make_pair(l, r);
+    }
+    S get_string_quantum(const string &expr,
+                         const uint16_t *idxs) const override {
+        S r(0, 0);
+        for (uint16_t j = 0; j < (uint16_t)expr.length(); j++) {
+            typename S::pg_t ipg = idxs != nullptr ? orb_sym[idxs[j]] : 0;
+            if (expr[j] == 'Z')
+                continue;
+            else if (expr[j] == 'P')
+                r = r + S(2, ipg);
+            else if (expr[j] == 'M')
+                r = r + S(-2, S::pg_inv(ipg));
+        }
+        return r;
     }
     static string get_sub_expr(const string &expr, int i, int j) {
         return expr.substr(i, j - i);
@@ -1501,7 +1559,6 @@ struct GeneralHamiltonian<S, FL, typename enable_if<!S::GIF>::type>
                 site_op_infos[m][j].second->deallocate();
         for (int16_t m = n_sites - 1; m >= 0; m--)
             basis[m]->deallocate();
-        opf->cg->deallocate();
         Hamiltonian<S, FL>::deallocate();
     }
 };
@@ -1604,8 +1661,7 @@ template <typename S, typename FL> struct GeneralMPO : MPO<S, FL> {
             n_terms += (LL)afd->data[ix].size();
         }
         vector<vector<S>> quanta_ref =
-            GeneralHamiltonian<S, FL>::init_string_quanta(afd->exprs, term_l,
-                                                          left_vacuum);
+            hamil->init_string_quanta(afd->exprs, term_l, left_vacuum);
         S qh = hamil->vacuum, actual_qh = qh;
         left_vacuum = hamil->vacuum;
         for (int ix = 0; ix < (int)afd->exprs.size(); ix++) {
@@ -1629,6 +1685,7 @@ template <typename S, typename FL> struct GeneralMPO : MPO<S, FL> {
         MPO<S, FL>::op = dynamic_pointer_cast<OpElement<S, FL>>(h_op);
         MPO<S, FL>::left_vacuum = left_vacuum;
         if (iprint) {
+            cout << endl;
             cout << "Build MPO | Nsites = " << setw(5) << n_sites
                  << " | Nterms = " << setw(10) << n_terms
                  << " | Algorithm = " << algo_type

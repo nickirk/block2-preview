@@ -59,6 +59,17 @@ template <typename S, typename FL> void bind_fl_big_site(py::module &m) {
 template <typename S, typename FL>
 void bind_fl_sci_big_site_fock(py::module &m) {
 
+    py::class_<SCIFockDeterminant, shared_ptr<SCIFockDeterminant>>(
+        m, "SCIFockDeterminant")
+        .def(py::init<>())
+        .def_readwrite("norbs", &SCIFockDeterminant::norbs)
+        .def_readwrite("nAlphaEl", &SCIFockDeterminant::nAlphaEl)
+        .def_readwrite("nBetaEl", &SCIFockDeterminant::nBetaEl)
+        .def_readwrite("EffDetLen", &SCIFockDeterminant::EffDetLen)
+        .def("getocc", &SCIFockDeterminant::getocc);
+
+    py::bind_vector<vector<SCIFockDeterminant>>(m, "VectorSCIFockDeterminant");
+
     py::class_<SCIFockBigSite<S, FL>, shared_ptr<SCIFockBigSite<S, FL>>,
                BigSite<S, FL>>(m, "SCIFockBigSite")
         .def(py::init<int, int, bool, const shared_ptr<FCIDUMP<FL>> &,
@@ -97,23 +108,26 @@ void bind_fl_sci_big_site_fock(py::module &m) {
         .def_readwrite("eps", &SCIFockBigSite<S, FL>::eps,
                        "Sparsity value threshold. Everything below eps will be "
                        "set to 0.0")
+        .def_readwrite("fragSpace", &SCIFockBigSite<S, FL>::fragSpace)
+        .def_readwrite("offsets", &SCIFockBigSite<S, FL>::offsets)
+        .def_readwrite("nDet", &SCIFockBigSite<S, FL>::nDet)
         .def("setOmpThreads", &SCIFockBigSite<S, FL>::setOmpThreads)
         // vv setter
         .def_property(
             "qnIdxBra", nullptr,
-            (void (SCIFockBigSite<S, FL>::*)(const std::vector<int> &)) &
+            (void(SCIFockBigSite<S, FL>::*)(const std::vector<int> &)) &
                 SCIFockBigSite<S, FL>::setQnIdxBra)
         .def_property(
             "qnIdxKet", nullptr,
-            (void (SCIFockBigSite<S, FL>::*)(const std::vector<int> &)) &
+            (void(SCIFockBigSite<S, FL>::*)(const std::vector<int> &)) &
                 SCIFockBigSite<S, FL>::setQnIdxKet)
         .def("setQnIdxBra",
-             (void (SCIFockBigSite<S, FL>::*)(const std::vector<int> &,
-                                              const std::vector<char> &)) &
+             (void(SCIFockBigSite<S, FL>::*)(const std::vector<int> &,
+                                             const std::vector<char> &)) &
                  SCIFockBigSite<S, FL>::setQnIdxBra)
         .def("setQnIdxKet",
-             (void (SCIFockBigSite<S, FL>::*)(const std::vector<int> &,
-                                              const std::vector<char> &)) &
+             (void(SCIFockBigSite<S, FL>::*)(const std::vector<int> &,
+                                             const std::vector<char> &)) &
                  SCIFockBigSite<S, FL>::setQnIdxKet)
         .def_readwrite("qnIdxBraH", &SCIFockBigSite<S, FL>::qnIdxBraH)
         .def_readwrite("qnIdxKetH", &SCIFockBigSite<S, FL>::qnIdxKetH)
@@ -148,6 +162,7 @@ template <typename S, typename FL> void bind_fl_csf_big_site(py::module &m) {
         .def_readwrite("qs", &CSFSpace<S, FL>::qs)
         .def_readwrite("qs_idxs", &CSFSpace<S, FL>::qs_idxs)
         .def_readwrite("n_unpaired", &CSFSpace<S, FL>::n_unpaired)
+        .def_readwrite("n_unpaired_idxs", &CSFSpace<S, FL>::n_unpaired_idxs)
         .def_readwrite("n_unpaired_shapes", &CSFSpace<S, FL>::n_unpaired_shapes)
         .def_readwrite("csfs", &CSFSpace<S, FL>::csfs)
         .def_readwrite("csf_idxs", &CSFSpace<S, FL>::csf_idxs)
@@ -167,11 +182,117 @@ template <typename S, typename FL> void bind_fl_csf_big_site(py::module &m) {
                       const std::vector<uint8_t> &>())
         .def(py::init<int, int, bool, const shared_ptr<FCIDUMP<FL>> &,
                       const std::vector<uint8_t> &, int>())
+        .def(py::init<shared_ptr<CSFSpace<S, FL>>,
+                      const shared_ptr<FCIDUMP<FL>> &,
+                      const vector<uint8_t> &>())
         .def("fill_csr_matrix", &CSFBigSite<S, FL>::fill_csr_matrix)
         .def("build_site_op", &CSFBigSite<S, FL>::build_site_op)
         .def_readwrite("fcidump", &CSFBigSite<S, FL>::fcidump)
         .def_readwrite("csf_space", &CSFBigSite<S, FL>::csf_space)
         .def_readwrite("is_right", &CSFBigSite<S, FL>::is_right);
+}
+
+template <typename S> void bind_drt_big_site(py::module &m) {
+
+    py::class_<DRT<S>, shared_ptr<DRT<S>>>(m, "DRT")
+        .def_readwrite("abc", &DRT<S>::abc)
+        .def_readwrite("pgs", &DRT<S>::pgs)
+        .def_readwrite("orb_sym", &DRT<S>::orb_sym)
+        .def_readwrite("jds", &DRT<S>::jds)
+        .def_readwrite("xs", &DRT<S>::xs)
+        .def_readwrite("n_sites", &DRT<S>::n_sites)
+        .def_readwrite("n_init_qs", &DRT<S>::n_init_qs)
+        .def(py::init<>())
+        .def(py::init<int16_t, int16_t, int16_t>())
+        .def(py::init<int16_t, int16_t, int16_t, typename S::pg_t>())
+        .def(py::init<int16_t, int16_t, int16_t, typename S::pg_t,
+                      const vector<typename S::pg_t> &>())
+        .def(py::init<int, S>())
+        .def(py::init<int, S, const vector<typename S::pg_t> &>())
+        .def(py::init<int, const vector<S> &>())
+        .def(py::init<int, const vector<S> &,
+                      const vector<typename S::pg_t> &>())
+        .def_property_readonly("n_rows", &DRT<S>::n_rows)
+        .def("initialize", &DRT<S>::initialize)
+        .def("__getitem__", &DRT<S>::operator[], py::arg("i"))
+        .def("index", &DRT<S>::index)
+        .def("__len__", &DRT<S>::size)
+        .def("q_index", &DRT<S>::q_index)
+        .def("q_range", &DRT<S>::q_range)
+        .def("get_basis", &DRT<S>::get_basis)
+        .def("__repr__", &DRT<S>::to_str);
+
+    py::class_<HDRT<S>, shared_ptr<HDRT<S>>>(m, "HDRT")
+        .def_readwrite("qs", &HDRT<S>::qs)
+        .def_readwrite("pgs", &HDRT<S>::pgs)
+        .def_readwrite("orb_sym", &HDRT<S>::orb_sym)
+        .def_readwrite("jds", &HDRT<S>::jds)
+        .def_readwrite("xs", &HDRT<S>::xs)
+        .def_readwrite("n_sites", &HDRT<S>::n_sites)
+        .def_readwrite("n_init_qs", &HDRT<S>::n_init_qs)
+        .def_readwrite("nd", &HDRT<S>::nd)
+        .def_readwrite("d_map", &HDRT<S>::d_map)
+        .def_readwrite("d_step", &HDRT<S>::d_step)
+        .def_readwrite("d_expr", &HDRT<S>::d_expr)
+        .def(py::init<>())
+        .def(py::init<int, const vector<pair<S, pair<int16_t, int16_t>>> &>())
+        .def(py::init<int, const vector<pair<S, pair<int16_t, int16_t>>> &,
+                      const vector<typename S::pg_t> &>())
+        .def_property_readonly("n_rows", &HDRT<S>::n_rows)
+        .def("initialize_steps", &HDRT<S>::initialize_steps)
+        .def("initialize", &HDRT<S>::initialize)
+        .def("__getitem__", &HDRT<S>::operator[], py::arg("i"))
+        .def("index", &HDRT<S>::index)
+        .def("__len__", &HDRT<S>::size)
+        .def("fill_data", &HDRT<S>::template fill_data<double>)
+        .def("__repr__", &HDRT<S>::to_str);
+}
+
+template <typename S, typename FL> void bind_fl_drt_big_site(py::module &m) {
+
+    py::class_<HDRTScheme<S, FL>, shared_ptr<HDRTScheme<S, FL>>>(m,
+                                                                 "HDRTScheme")
+        .def(py::init<const shared_ptr<HDRT<S>> &,
+                      const vector<shared_ptr<SpinPermScheme>> &>())
+        .def("sort_integral", &HDRTScheme<S, FL>::sort_integral)
+        .def("sort_npdm", &HDRTScheme<S, FL>::sort_npdm)
+        .def_readwrite("hdrt", &HDRTScheme<S, FL>::hdrt)
+        .def_readwrite("schemes", &HDRTScheme<S, FL>::schemes)
+        .def_readwrite("expr_mp", &HDRTScheme<S, FL>::expr_mp)
+        .def_readwrite("hjumps", &HDRTScheme<S, FL>::hjumps)
+        .def_readwrite("ds", &HDRTScheme<S, FL>::ds)
+        .def_readwrite("jis", &HDRTScheme<S, FL>::jis)
+        .def_readwrite("n_patterns", &HDRTScheme<S, FL>::n_patterns);
+
+    py::class_<DRTBigSite<S, FL>, shared_ptr<DRTBigSite<S, FL>>,
+               BigSite<S, FL>>(m, "DRTBigSite")
+        .def(py::init<const vector<S> &, bool, int,
+                      const vector<typename S::pg_t> &>())
+        .def(py::init<const vector<S> &, bool, int,
+                      const vector<typename S::pg_t> &,
+                      const shared_ptr<FCIDUMP<FL>> &>())
+        .def(py::init<const vector<S> &, bool, int,
+                      const vector<typename S::pg_t> &,
+                      const shared_ptr<FCIDUMP<FL>> &, int>())
+        .def_static("get_target_quanta", &DRTBigSite<S, FL>::get_target_quanta)
+        .def("get_site_op_infos", &DRTBigSite<S, FL>::get_site_op_infos)
+        .def("prepare_factors", &DRTBigSite<S, FL>::prepare_factors)
+        .def("fill_csr_matrix_from_coo",
+             &DRTBigSite<S, FL>::fill_csr_matrix_from_coo)
+        .def("fill_csr_matrix", &DRTBigSite<S, FL>::fill_csr_matrix)
+        .def("build_npdm",
+             [](DRTBigSite<S, FL> *self, const string &expr,
+                py::array_t<FL> bra_ci, py::array_t<FL> ket_ci) {
+                 return self->build_npdm(expr, bra_ci.data(), ket_ci.data());
+             })
+        .def_readwrite("n_total_orbs", &DRTBigSite<S, FL>::n_total_orbs)
+        .def_readwrite("cutoff", &DRTBigSite<S, FL>::cutoff)
+        .def_readwrite("fcidump", &DRTBigSite<S, FL>::fcidump)
+        .def_readwrite("gfd", &DRTBigSite<S, FL>::gfd)
+        .def_readwrite("drt", &DRTBigSite<S, FL>::drt)
+        .def_readwrite("factors", &DRTBigSite<S, FL>::factors)
+        .def_readwrite("factor_strides", &DRTBigSite<S, FL>::factor_strides)
+        .def_readwrite("is_right", &DRTBigSite<S, FL>::is_right);
 }
 
 template <typename S, typename FL>
@@ -297,3 +418,25 @@ void bind_fl_dmrg_big_site(py::module &m) {
         .def_readwrite("delta_e", &DMRGBigSiteAQCC<S, FL, FLS>::delta_e)
         .def_readwrite("ref_energy", &DMRGBigSiteAQCC<S, FL, FLS>::ref_energy);
 }
+
+#ifdef _EXPLICIT_TEMPLATE
+
+extern template void bind_fl_big_site<SZ, double>(py::module &m);
+extern template void bind_fl_hamiltonian_big_site<SZ, double>(py::module &m);
+extern template void bind_fl_dmrg_big_site<SZ, double, double>(py::module &m);
+
+extern template void bind_fl_big_site<SU2, double>(py::module &m);
+extern template void bind_fl_hamiltonian_big_site<SU2, double>(py::module &m);
+extern template void bind_fl_dmrg_big_site<SU2, double, double>(py::module &m);
+
+extern template void bind_fl_sci_big_site_fock<SZ, double>(py::module &m);
+
+extern template void bind_fl_csf_big_site<SU2, double>(py::module &m);
+
+extern template void bind_drt_big_site<SZ>(py::module &m);
+extern template void bind_drt_big_site<SU2>(py::module &m);
+
+extern template void bind_fl_drt_big_site<SZ, double>(py::module &m);
+extern template void bind_fl_drt_big_site<SU2, double>(py::module &m);
+
+#endif

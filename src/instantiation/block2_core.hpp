@@ -60,6 +60,7 @@ extern template struct block2::VectorAllocator<uint32_t>;
 extern template struct block2::Allocator<double>;
 extern template struct block2::StackAllocator<double>;
 extern template struct block2::VectorAllocator<double>;
+extern template struct block2::TemporaryAllocator<double>;
 extern template struct block2::DataFrame<double>;
 
 // archived_sparse_matrix.hpp
@@ -119,6 +120,8 @@ extern template struct block2::DelayedTensorFunctions<block2::SU2, double>;
 
 // expr.hpp
 extern template struct block2::OpExpr<block2::SZ>;
+extern template struct block2::OpExprRef<block2::SZ>;
+extern template struct block2::OpCounter<block2::SZ>;
 extern template struct block2::OpElement<block2::SZ, double>;
 extern template struct block2::OpElementRef<block2::SZ, double>;
 extern template struct block2::OpProduct<block2::SZ, double>;
@@ -126,6 +129,8 @@ extern template struct block2::OpSumProd<block2::SZ, double>;
 extern template struct block2::OpSum<block2::SZ, double>;
 
 extern template struct block2::OpExpr<block2::SU2>;
+extern template struct block2::OpExprRef<block2::SU2>;
+extern template struct block2::OpCounter<block2::SU2>;
 extern template struct block2::OpElement<block2::SU2, double>;
 extern template struct block2::OpElementRef<block2::SU2, double>;
 extern template struct block2::OpProduct<block2::SU2, double>;
@@ -287,6 +292,8 @@ extern template struct block2::DelayedTensorFunctions<block2::SU2K, double>;
 
 // expr.hpp
 extern template struct block2::OpExpr<block2::SZK>;
+extern template struct block2::OpExprRef<block2::SZK>;
+extern template struct block2::OpCounter<block2::SZK>;
 extern template struct block2::OpElement<block2::SZK, double>;
 extern template struct block2::OpElementRef<block2::SZK, double>;
 extern template struct block2::OpProduct<block2::SZK, double>;
@@ -294,6 +301,8 @@ extern template struct block2::OpSumProd<block2::SZK, double>;
 extern template struct block2::OpSum<block2::SZK, double>;
 
 extern template struct block2::OpExpr<block2::SU2K>;
+extern template struct block2::OpExprRef<block2::SU2K>;
+extern template struct block2::OpCounter<block2::SU2K>;
 extern template struct block2::OpElement<block2::SU2K, double>;
 extern template struct block2::OpElementRef<block2::SU2K, double>;
 extern template struct block2::OpProduct<block2::SU2K, double>;
@@ -423,6 +432,8 @@ extern template struct block2::DelayedTensorFunctions<block2::SGB, double>;
 
 // expr.hpp
 extern template struct block2::OpExpr<block2::SGF>;
+extern template struct block2::OpExprRef<block2::SGF>;
+extern template struct block2::OpCounter<block2::SGF>;
 extern template struct block2::OpElement<block2::SGF, double>;
 extern template struct block2::OpElementRef<block2::SGF, double>;
 extern template struct block2::OpProduct<block2::SGF, double>;
@@ -430,6 +441,8 @@ extern template struct block2::OpSumProd<block2::SGF, double>;
 extern template struct block2::OpSum<block2::SGF, double>;
 
 extern template struct block2::OpExpr<block2::SGB>;
+extern template struct block2::OpExprRef<block2::SGB>;
+extern template struct block2::OpCounter<block2::SGB>;
 extern template struct block2::OpElement<block2::SGB, double>;
 extern template struct block2::OpElementRef<block2::SGB, double>;
 extern template struct block2::OpProduct<block2::SGB, double>;
@@ -868,6 +881,7 @@ extern template struct block2::TensorFunctions<block2::SGB, complex<double>>;
 extern template struct block2::Allocator<float>;
 extern template struct block2::StackAllocator<float>;
 extern template struct block2::VectorAllocator<float>;
+extern template struct block2::TemporaryAllocator<float>;
 extern template struct block2::DataFrame<float>;
 
 // archived_sparse_matrix.hpp

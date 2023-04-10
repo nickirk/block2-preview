@@ -22,8 +22,13 @@
 
 #include "big_site/big_site.hpp"
 #include "big_site/csf_big_site.hpp"
+#include "big_site/drt_big_site.hpp"
 #include "big_site/qc_hamiltonian_big_site.hpp"
 #include "big_site/sci_fcidump.hpp"
 #include "big_site/sci_fock_big_site.hpp"
 #include "big_site/sci_fock_determinant.hpp"
 #include "big_site/sweep_algorithm_big_site.hpp"
+
+#ifdef _EXPLICIT_TEMPLATE
+#include "instantiation/block2_big_site.hpp"
+#endif

@@ -19,6 +19,8 @@ The block2 code is developed and maintained in Garnet Chan group at Caltech.
 
 Documentation: https://block2.readthedocs.io/en/latest/
 
+Tutorial (python interface): https://block2.readthedocs.io/en/latest/tutorial/hubbard.html
+
 Source code: https://github.com/block-hczhai/block2-preview
 
 Contributors
@@ -54,8 +56,8 @@ Features
 * Finite-Temperature DMRG (ancilla approach)
 * Low-Temperature DMRG (partition function approach)
 * Particle Density Matrix (1-site / 2-site)
-    * 1PDM / 2PDM
-    * Transition 1PDM
+    * 1PDM / 2PDM / 3PDM / 4PDM
+    * Transition 1PDM / 2PDM / 3PDM / 4PDM
     * Spin / charge correlation
 * Quantum Chemistry MPO
     * Normal-Complementary (NC) partition
@@ -67,16 +69,21 @@ Features
     * Block-sparse (outer) / dense (inner)
     * Block-sparse (outer) / elementwise-sparse (CSR, inner)
 * Fermionic MPS algebra (non-spin-adapted only)
-* Determinant overlap (non-spin-adapted only)
-* Determinant/CSF overlap sampling
+* Determinant/CSF coefficients of MPS
 * Multi-level parallel DMRG
     * Parallelism over sites (2-site only)
-    * Parallelism over sum of MPOs (non-spin-adapted only)
+    * Parallelism over sum of MPOs (distributed)
     * Parallelism over operators (distributed/shared memory)
     * Parallelism over symmetry sectors (shared memory)
     * Parallelism within dense matrix multiplications (MKL)
-* DMRG-CASSCF (pyscf interface)
-    * Nuclear gradients and geometry optimization (pyscf interface, RHF reference only)
+* DMRG-CASSCF and contracted dynamic correlation
+    * DMRG-CASSCF (pyscf / openMOLCAS / forte interface)
+    * DMRG-CASSCF nuclear gradients and geometry optimization (pyscf interface, RHF reference only)
+    * DMRG-sc-NEVPT2 (pyscf interface, classical approach)
+    * DMRG-sc-MPS-NEVPT2 (pyscf interface, MPS compression approximation)
+    * DMRG-CASPT2 (openMOLCAS interface)
+    * DMRG-cu-CASPT2 (openMOLCAS interface)
+    * DMRG-MRDSRG (forte interface)
 * DMRG with Spin-Orbit Coupling (SOC)
     * 1-step approach (full complex one-MPO and hybrid real/complex two-MPO schemes)
     * 2-step approach
@@ -106,8 +113,23 @@ Features
    user/advanced
    user/keywords
    user/dmrg-scf
+   user/open-molcas
+   user/forte
    user/mps-io
    user/references
+
+.. raw:: latex
+
+   \chapter{Python Interface Tutorial}
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Python Interface Tutorial
+
+   tutorial/hubbard
+   tutorial/heisenberg
+   tutorial/qc-hamiltonians
+   tutorial/custom-hamiltonian
 
 .. raw:: latex
 

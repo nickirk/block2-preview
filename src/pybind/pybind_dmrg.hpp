@@ -571,9 +571,23 @@ template <typename S, typename FL> void bind_fl_partition(py::module &m) {
         .def_readwrite("cmat", &EffectiveHamiltonian<S, FL>::cmat)
         .def_readwrite("vmat", &EffectiveHamiltonian<S, FL>::vmat)
         .def_readwrite("tf", &EffectiveHamiltonian<S, FL>::tf)
+        .def_readwrite("hop_mat", &EffectiveHamiltonian<S, FL>::hop_mat)
         .def_readwrite("opdq", &EffectiveHamiltonian<S, FL>::opdq)
+        .def_readwrite("hop_left_vacuum",
+                       &EffectiveHamiltonian<S, FL>::hop_left_vacuum)
         .def_readwrite("compute_diag",
                        &EffectiveHamiltonian<S, FL>::compute_diag)
+        .def_readwrite("wfn_infos", &EffectiveHamiltonian<S, FL>::wfn_infos)
+        .def_readwrite("operator_quanta",
+                       &EffectiveHamiltonian<S, FL>::operator_quanta)
+        .def_readwrite("npdm_fragment_filename",
+                       &EffectiveHamiltonian<S, FL>::npdm_fragment_filename)
+        .def_readwrite("npdm_scheme", &EffectiveHamiltonian<S, FL>::npdm_scheme)
+        .def_readwrite("npdm_parallel_center",
+                       &EffectiveHamiltonian<S, FL>::npdm_parallel_center)
+        .def_readwrite("npdm_n_sites",
+                       &EffectiveHamiltonian<S, FL>::npdm_n_sites)
+        .def_readwrite("npdm_center", &EffectiveHamiltonian<S, FL>::npdm_center)
         .def("__call__", &EffectiveHamiltonian<S, FL>::operator(), py::arg("b"),
              py::arg("c"), py::arg("idx") = 0, py::arg("factor") = 1.0,
              py::arg("all_reduce") = true)
@@ -662,11 +676,37 @@ template <typename S, typename FL> void bind_fl_partition(py::module &m) {
         .def_readwrite("vmat",
                        &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::vmat)
         .def_readwrite("tf", &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::tf)
+        .def_readwrite("hop_mat",
+                       &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::hop_mat)
         .def_readwrite("opdq",
                        &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::opdq)
         .def_readwrite(
+            "hop_left_vacuum",
+            &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::hop_left_vacuum)
+        .def_readwrite(
             "compute_diag",
             &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::compute_diag)
+        .def_readwrite("wfn_infos",
+                       &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::wfn_infos)
+        .def_readwrite(
+            "operator_quanta",
+            &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::operator_quanta)
+        .def_readwrite(
+            "npdm_fragment_filename",
+            &EffectiveHamiltonian<S, FL,
+                                  MultiMPS<S, FL>>::npdm_fragment_filename)
+        .def_readwrite(
+            "npdm_scheme",
+            &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::npdm_scheme)
+        .def_readwrite(
+            "npdm_parallel_center",
+            &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::npdm_parallel_center)
+        .def_readwrite(
+            "npdm_n_sites",
+            &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::npdm_n_sites)
+        .def_readwrite(
+            "npdm_center",
+            &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::npdm_center)
         .def("__call__",
              &EffectiveHamiltonian<S, FL, MultiMPS<S, FL>>::operator(),
              py::arg("b"), py::arg("c"), py::arg("idx") = 0,
@@ -715,6 +755,9 @@ void bind_fl_moving_environment(py::module &m, const string &name) {
                        &MovingEnvironment<S, FL, FLS>::cached_info)
         .def_readwrite("cached_contraction",
                        &MovingEnvironment<S, FL, FLS>::cached_contraction)
+        .def_readwrite(
+            "fused_contraction_rotation",
+            &MovingEnvironment<S, FL, FLS>::fused_contraction_rotation)
         .def("left_contract_rotate",
              &MovingEnvironment<S, FL, FLS>::left_contract_rotate)
         .def("right_contract_rotate",
@@ -771,6 +814,8 @@ void bind_fl_moving_environment(py::module &m, const string &name) {
                             checked_estream_redirect>())
         .def("prepare", &MovingEnvironment<S, FL, FLS>::prepare,
              py::arg("start_site") = 0, py::arg("end_site") = -1)
+        .def("remove_partition_files",
+             &MovingEnvironment<S, FL, FLS>::remove_partition_files)
         .def("move_to", &MovingEnvironment<S, FL, FLS>::move_to, py::arg("i"),
              py::arg("preserve_data") = false)
         .def("partial_prepare", &MovingEnvironment<S, FL, FLS>::partial_prepare)
@@ -784,6 +829,8 @@ void bind_fl_moving_environment(py::module &m, const string &name) {
              &MovingEnvironment<S, FL, FLS>::get_left_partition_filename)
         .def("get_right_partition_filename",
              &MovingEnvironment<S, FL, FLS>::get_right_partition_filename)
+        .def("get_npdm_fragment_filename",
+             &MovingEnvironment<S, FL, FLS>::get_npdm_fragment_filename)
         .def("eff_ham", &MovingEnvironment<S, FL, FLS>::eff_ham,
              py::arg("fuse_type"), py::arg("forward"), py::arg("compute_diag"),
              py::arg("bra_wfn"), py::arg("ket_wfn"))
@@ -1049,6 +1096,8 @@ void bind_fl_expect(py::module &m, const string &name) {
         .def("get_1npc_spatial", &Expect<S, FL, FLS, FLX>::get_1npc_spatial,
              py::arg("s"), py::arg("n_physical_sites") = (uint16_t)0U)
         .def("get_1npc", &Expect<S, FL, FLS, FLX>::get_1npc, py::arg("s"),
+             py::arg("n_physical_sites") = (uint16_t)0U)
+        .def("get_npdm", &Expect<S, FL, FLS, FLX>::get_npdm,
              py::arg("n_physical_sites") = (uint16_t)0U);
 }
 
@@ -1565,6 +1614,9 @@ template <typename S, typename FL> void bind_fl_mpo(py::module &m) {
                        &MPO<S, FL>::middle_operator_exprs)
         .def_readwrite("op", &MPO<S, FL>::op)
         .def_readwrite("left_vacuum", &MPO<S, FL>::left_vacuum)
+        .def_readwrite("npdm_scheme", &MPO<S, FL>::npdm_scheme)
+        .def_readwrite("npdm_parallel_center",
+                       &MPO<S, FL>::npdm_parallel_center)
         .def_readwrite("schemer", &MPO<S, FL>::schemer)
         .def_readwrite("tf", &MPO<S, FL>::tf)
         .def_readwrite("site_op_infos", &MPO<S, FL>::site_op_infos)
@@ -1810,7 +1862,7 @@ template <typename FL> void bind_general_fcidump(py::module &m) {
                     py::arg("cutoff") = (typename GeneralFCIDUMP<FL>::FP)0.0)
         .def("adjust_order", &GeneralFCIDUMP<FL>::adjust_order,
              py::arg("schemes") = vector<shared_ptr<SpinPermScheme>>(),
-             py::arg("merge") = true,
+             py::arg("merge") = true, py::arg("is_drt") = false,
              py::arg("cutoff") = (typename GeneralFCIDUMP<FL>::FP)0.0)
         .def("merge_terms", &GeneralFCIDUMP<FL>::merge_terms,
              py::arg("cutoff") = (typename GeneralFCIDUMP<FL>::FP)0.0)
@@ -1831,20 +1883,90 @@ template <typename FL> void bind_general_fcidump(py::module &m) {
 
 template <typename S, typename FL> void bind_fl_general(py::module &m) {
 
+    struct PyGeneralHamiltonian : GeneralHamiltonian<S, FL> {
+        typedef GeneralHamiltonian<S, FL> super_t;
+        typedef unordered_map<string, shared_ptr<SparseMatrix<S, FL>>> mp_str_t;
+        using GeneralHamiltonian<S, FL>::GeneralHamiltonian;
+        shared_ptr<StateInfo<S>> get_site_basis(uint16_t m) const override {
+            PYBIND11_OVERRIDE(shared_ptr<StateInfo<S>>, super_t, get_site_basis,
+                              m);
+        }
+        void init_site_ops() override {
+            PYBIND11_OVERRIDE(void, super_t, init_site_ops, );
+        }
+        void get_site_string_ops(uint16_t m, mp_str_t &ops) override {
+            pybind11::gil_scoped_acquire gil;
+            pybind11::function py_method =
+                pybind11::get_override(this, "get_site_string_ops");
+            if (py_method) {
+                py::object rops = py_method(m, ops);
+                ops = rops.template cast<mp_str_t>();
+            } else
+                super_t::get_site_string_ops(m, ops);
+        }
+        vector<vector<S>> init_string_quanta(const vector<string> &exprs,
+                                             const vector<uint16_t> &term_l,
+                                             S left_vacuum) override {
+            PYBIND11_OVERRIDE(vector<vector<S>>, super_t, init_string_quanta,
+                              exprs, term_l, left_vacuum);
+        }
+        pair<S, S> get_string_quanta(const vector<S> &ref, const string &expr,
+                                     const uint16_t *idxs,
+                                     uint16_t k) const override {
+            pybind11::gil_scoped_acquire gil;
+            pybind11::function py_method =
+                pybind11::get_override(this, "get_string_quanta");
+            if (py_method) {
+                vector<uint16_t> vidxs(idxs, idxs + expr.length());
+                py::object r = py_method(ref, expr, vidxs, k);
+                return r.template cast<pair<S, S>>();
+            } else
+                return super_t::get_string_quanta(ref, expr, idxs, k);
+        }
+        S get_string_quantum(const string &expr,
+                             const uint16_t *idxs) const override {
+            pybind11::gil_scoped_acquire gil;
+            pybind11::function py_method =
+                pybind11::get_override(this, "get_string_quantum");
+            if (py_method) {
+                vector<uint16_t> vidxs(idxs, idxs + expr.length());
+                py::object r = py_method(expr, vidxs);
+                return r.cast<S>();
+            } else
+                return super_t::get_string_quantum(expr, idxs);
+        }
+        void deallocate() override {
+            PYBIND11_OVERRIDE(void, super_t, deallocate, );
+        }
+    };
+
     py::class_<GeneralHamiltonian<S, FL>, shared_ptr<GeneralHamiltonian<S, FL>>,
-               Hamiltonian<S, FL>>(m, "GeneralHamiltonian")
+               Hamiltonian<S, FL>, PyGeneralHamiltonian>(m,
+                                                         "GeneralHamiltonian")
         .def(py::init<>())
         .def(py::init<S, int>())
         .def(py::init<S, int, const vector<typename S::pg_t> &>())
         .def(py::init<S, int, const vector<typename S::pg_t> &, int>())
+        .def_readwrite("site_norm_ops",
+                       &GeneralHamiltonian<S, FL>::site_norm_ops)
         .def("get_site_basis", &GeneralHamiltonian<S, FL>::get_site_basis)
         .def("init_site_ops", &GeneralHamiltonian<S, FL>::init_site_ops)
         .def("get_site_string_ops",
              &GeneralHamiltonian<S, FL>::get_site_string_ops)
-        .def("deallocate", &GeneralHamiltonian<S, FL>::deallocate)
-        .def_static("init_string_quanta",
-                    &GeneralHamiltonian<S, FL>::init_string_quanta)
-        .def_static("get_sub_expr", &GeneralHamiltonian<S, FL>::get_sub_expr);
+        .def("init_string_quanta",
+             &GeneralHamiltonian<S, FL>::init_string_quanta)
+        .def("get_string_quanta",
+             [](GeneralHamiltonian<S, FL> *self, const vector<S> &ref,
+                const string &expr, const vector<uint16_t> &idxs, uint16_t k) {
+                 return self->get_string_quanta(ref, expr, idxs.data(), k);
+             })
+        .def("get_string_quantum",
+             [](GeneralHamiltonian<S, FL> *self, const string &expr,
+                const vector<uint16_t> &idxs) {
+                 return self->get_string_quantum(expr, idxs.data());
+             })
+        .def_static("get_sub_expr", &GeneralHamiltonian<S, FL>::get_sub_expr)
+        .def("deallocate", &GeneralHamiltonian<S, FL>::deallocate);
 
     py::class_<GeneralMPO<S, FL>, shared_ptr<GeneralMPO<S, FL>>, MPO<S, FL>>(
         m, "GeneralMPO")
@@ -1892,6 +2014,37 @@ template <typename S, typename FL> void bind_fl_general(py::module &m) {
                       const shared_ptr<GeneralFCIDUMP<FL>> &, MPOAlgorithmTypes,
                       typename GeneralMPO<S, FL>::FP, int, int,
                       const string &>(),
+             py::call_guard<checked_ostream_redirect,
+                            checked_estream_redirect>());
+
+    py::class_<GeneralNPDMMPO<S, FL>, shared_ptr<GeneralNPDMMPO<S, FL>>,
+               MPO<S, FL>>(m, "GeneralNPDMMPO")
+        .def_readwrite("cutoff", &GeneralNPDMMPO<S, FL>::cutoff)
+        .def_readwrite("iprint", &GeneralNPDMMPO<S, FL>::iprint)
+        .def_readwrite("left_vacuum", &GeneralNPDMMPO<S, FL>::left_vacuum)
+        .def_readwrite("symbol_free", &GeneralNPDMMPO<S, FL>::symbol_free)
+        .def_readwrite("parallel_rule", &GeneralNPDMMPO<S, FL>::parallel_rule)
+        .def(py::init<const shared_ptr<GeneralHamiltonian<S, FL>> &,
+                      const shared_ptr<NPDMScheme> &>(),
+             py::call_guard<checked_ostream_redirect,
+                            checked_estream_redirect>())
+        .def(py::init<const shared_ptr<GeneralHamiltonian<S, FL>> &,
+                      const shared_ptr<NPDMScheme> &, bool>(),
+             py::call_guard<checked_ostream_redirect,
+                            checked_estream_redirect>())
+        .def(py::init<const shared_ptr<GeneralHamiltonian<S, FL>> &,
+                      const shared_ptr<NPDMScheme> &, bool,
+                      typename GeneralMPO<S, FL>::FP>(),
+             py::call_guard<checked_ostream_redirect,
+                            checked_estream_redirect>())
+        .def(py::init<const shared_ptr<GeneralHamiltonian<S, FL>> &,
+                      const shared_ptr<NPDMScheme> &, bool,
+                      typename GeneralMPO<S, FL>::FP, int>(),
+             py::call_guard<checked_ostream_redirect,
+                            checked_estream_redirect>())
+        .def(py::init<const shared_ptr<GeneralHamiltonian<S, FL>> &,
+                      const shared_ptr<NPDMScheme> &, bool,
+                      typename GeneralMPO<S, FL>::FP, int, const string &>(),
              py::call_guard<checked_ostream_redirect,
                             checked_estream_redirect>());
 }
@@ -2003,7 +2156,15 @@ template <typename S = void> void bind_dmrg_types(py::module &m) {
                                          py::arithmetic())
         .value("Automatic", ExpectationAlgorithmTypes::Automatic)
         .value("Normal", ExpectationAlgorithmTypes::Normal)
-        .value("Fast", ExpectationAlgorithmTypes::Fast);
+        .value("Fast", ExpectationAlgorithmTypes::Fast)
+        .value("SymbolFree", ExpectationAlgorithmTypes::SymbolFree)
+        .value("Compressed", ExpectationAlgorithmTypes::Compressed)
+        .value("LowMem", ExpectationAlgorithmTypes::LowMem)
+        .value("CompressedSymbolFree",
+               ExpectationAlgorithmTypes::Compressed |
+                   ExpectationAlgorithmTypes::SymbolFree)
+        .def(py::self & py::self)
+        .def(py::self | py::self);
 
     py::enum_<ExpectationTypes>(m, "ExpectationTypes", py::arithmetic())
         .value("Real", ExpectationTypes::Real)

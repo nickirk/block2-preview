@@ -114,6 +114,17 @@ class MPOAlgorithmTypes(IntFlag):
     NoTransNoRIntermedConventional = 4096 | 2048 | 1024
 
 
+class NPDMAlgorithmTypes(IntFlag):
+    Nothing = 0
+    SymbolFree = 1
+    Normal = 2
+    Fast = 4
+    Compressed = 8
+    LowMem = 16
+    Default = 1 | 8
+    Conventional = 32
+
+
 class STTypes(IntFlag):
     H = 1
     HT = 2
@@ -179,24 +190,28 @@ class Block2Wrapper:
             self.brs = b.su2
             self.SX = b.SU2
             self.VectorSX = b.VectorSU2
+            self.VectorVectorSX = b.VectorVectorSU2
         elif SymmetryTypes.SZ in symm_type:
             self.bs = self.bx.sz
             self.bcs = self.bc.sz if self.bc is not None else None
             self.brs = b.sz
             self.SX = b.SZ
             self.VectorSX = b.VectorSZ
+            self.VectorVectorSX = b.VectorVectorSZ
         elif SymmetryTypes.SGF in symm_type:
             self.bs = self.bx.sgf
             self.bcs = self.bc.sgf if self.bc is not None else None
             self.brs = b.sgf
             self.SX = b.SGF
             self.VectorSX = b.VectorSGF
+            self.VectorVectorSX = b.VectorVectorSGF
         elif SymmetryTypes.SGB in symm_type:
             self.bs = self.bx.sgb
             self.bcs = self.bc.sgb if self.bc is not None else None
             self.brs = b.sgb
             self.SX = b.SGB
             self.VectorSX = b.VectorSGB
+            self.VectorVectorSX = b.VectorVectorSGB
 
 
 class DMRGDriver:
@@ -204,6 +219,7 @@ class DMRGDriver:
         self,
         stack_mem=1 << 30,
         scratch="./nodex",
+        clean_scratch=True,
         restart_dir=None,
         n_threads=None,
         symm_type=SymmetryTypes.SU2,
@@ -221,6 +237,7 @@ class DMRGDriver:
         self.stack_mem = stack_mem
         self.stack_mem_ratio = stack_mem_ratio
         self.symm_type = symm_type
+        self.clean_scratch = clean_scratch
         bw = self.bw
 
         if n_threads is None:
@@ -447,16 +464,22 @@ class DMRGDriver:
         if reset_frame:
             if SymmetryTypes.SP not in bw.symm_type:
                 bw.b.Global.frame = bw.b.DoubleDataFrame(
-                    int(self.stack_mem * 0.1), int(self.stack_mem * 0.9), self.scratch,
-                    self.stack_mem_ratio, self.stack_mem_ratio
+                    int(self.stack_mem * 0.1),
+                    int(self.stack_mem * 0.9),
+                    self.scratch,
+                    self.stack_mem_ratio,
+                    self.stack_mem_ratio,
                 )
                 bw.b.Global.frame.fp_codec = bw.b.DoubleFPCodec(1e-16, 1024)
                 bw.b.Global.frame_float = None
                 self.frame = bw.b.Global.frame
             else:
                 bw.b.Global.frame_float = bw.b.FloatDataFrame(
-                    int(self.stack_mem * 0.1), int(self.stack_mem * 0.9), self.scratch,
-                    self.stack_mem_ratio, self.stack_mem_ratio
+                    int(self.stack_mem * 0.1),
+                    int(self.stack_mem * 0.9),
+                    self.scratch,
+                    self.stack_mem_ratio,
+                    self.stack_mem_ratio,
                 )
                 bw.b.Global.frame_float.fp_codec = bw.b.FloatFPCodec(1e-16, 1024)
                 bw.b.Global.frame = None
@@ -490,6 +513,7 @@ class DMRGDriver:
         heis_twos=-1,
         heis_twosz=0,
         singlet_embedding=True,
+        pauli_mode=False,
     ):
         bw = self.bw
         import numpy as np
@@ -524,11 +548,117 @@ class DMRGDriver:
                 self.orb_sym = bw.b.VectorUInt8(list(orb_sym[0]) + list(orb_sym[1]))
             else:
                 self.orb_sym = bw.b.VectorUInt8(orb_sym)
-        self.ghamil = bw.bs.GeneralHamiltonian(
-            self.vacuum, self.n_sites, self.orb_sym, self.heis_twos
-        )
+        if pauli_mode:
+            self.ghamil = self.get_pauli_hamiltonian()
+        else:
+            self.ghamil = bw.bs.GeneralHamiltonian(
+                self.vacuum, self.n_sites, self.orb_sym, self.heis_twos
+            )
 
-    def write_fcidump(self, h1e, g2e, ecore=0, filename=None, pg="d2h"):
+    def get_pauli_hamiltonian(self):
+        assert SymmetryTypes.SGB in self.symm_type
+        GH = self.bw.bs.GeneralHamiltonian
+        super_self = self
+        import numpy as np
+
+        class PauliHamiltonian(GH):
+            def __init__(self, vacuum, n_sites, orb_sym):
+                GH.__init__(self)
+                self.opf = super_self.bw.bs.OperatorFunctions(super_self.bw.brs.CG())
+                self.vacuum = vacuum
+                self.n_sites = n_sites
+                self.orb_sym = orb_sym
+                self.basis = super_self.bw.brs.VectorStateInfo(
+                    [self.get_site_basis(m) for m in range(self.n_sites)]
+                )
+                self.site_op_infos = super_self.bw.brs.VectorVectorPLMatInfo(
+                    [super_self.bw.brs.VectorPLMatInfo() for _ in range(self.n_sites)]
+                )
+                self.site_norm_ops = super_self.bw.bs.VectorMapStrSpMat(
+                    [super_self.bw.bs.MapStrSpMat() for _ in range(self.n_sites)]
+                )
+                self.init_site_ops()
+
+            def get_site_basis(self, m):
+                """Single site states."""
+                bz = super_self.bw.brs.StateInfo(super_self.bw.SX(0, 0))
+                bz.n_states[0] = 2
+                return bz
+
+            def init_site_ops(self):
+                """Initialize operator quantum numbers at each site (site_op_infos)
+                and primitive (single character) site operators (site_norm_ops)."""
+                op_defs = {
+                    "": np.array([1.0, 0.0, 0.0, 1.0]),
+                    "I": np.array([1.0, 0.0, 0.0, 1.0]),
+                    "X": np.array([0.0, 1.0, 1.0, 0.0]),
+                    "Y": np.array([0.0, -1.0, 1.0, 0.0]),
+                    "Z": np.array([1.0, 0.0, 0.0, -1.0]),
+                }
+                i_alloc = super_self.bw.b.IntVectorAllocator()
+                d_alloc = super_self.bw.b.DoubleVectorAllocator()
+                q = self.vacuum
+                for m in range(self.n_sites):
+                    mat = super_self.bw.brs.SparseMatrixInfo(i_alloc)
+                    mat.initialize(self.basis[m], self.basis[m], q, q.is_fermion)
+                    self.site_op_infos[m].append((q, mat))
+                for m in range(self.n_sites):
+                    info = self.find_site_op_info(m, super_self.bw.SX(0, 0, 0))
+                    for op, x in op_defs.items():
+                        mat = super_self.bw.bs.SparseMatrix(d_alloc)
+                        mat.allocate(info)
+                        mat[info.find_state(super_self.bw.SX(0, 0))] = x
+                        self.site_norm_ops[m][op] = mat
+
+            def get_site_string_ops(self, m, ops):
+                """Construct longer site operators from primitive ones."""
+                d_alloc = super_self.bw.b.DoubleVectorAllocator()
+                for k in ops:
+                    if k in self.site_norm_ops[m]:
+                        ops[k] = self.site_norm_ops[m][k]
+                    else:
+                        xx = self.site_norm_ops[m][k[0]]
+                        for p in k[1:]:
+                            xp = self.site_norm_ops[m][p]
+                            q = xx.info.delta_quantum + xp.info.delta_quantum
+                            mat = super_self.bw.bs.SparseMatrix(d_alloc)
+                            mat.allocate(self.find_site_op_info(m, q))
+                            self.opf.product(0, xx, xp, mat)
+                            xx = mat
+                        ops[k] = self.site_norm_ops[m][k] = xx
+                return ops
+
+            def init_string_quanta(self, exprs, term_l, left_vacuum):
+                """Quantum number for string operators (orbital independent part)."""
+                return super_self.bw.VectorVectorSX(
+                    [
+                        super_self.bw.VectorSX([self.vacuum] * (len(expr) + 1))
+                        for expr in exprs
+                    ]
+                )
+
+            def get_string_quanta(self, ref, expr, idxs, k):
+                """Quantum number for string operators (orbital dependent part)."""
+                return self.vacuum, self.vacuum
+
+            def get_string_quantum(self, expr, idxs):
+                """Total quantum number for a string operator."""
+                return self.vacuum
+
+            def deallocate(self):
+                """Release memory."""
+                for ops in self.site_norm_ops:
+                    for p in ops.values():
+                        p.deallocate()
+                for infos in self.site_op_infos:
+                    for _, p in infos:
+                        p.deallocate()
+                for bz in self.basis:
+                    bz.deallocate()
+
+        return PauliHamiltonian(self.vacuum, self.n_sites, self.orb_sym)
+
+    def write_fcidump(self, h1e, g2e, ecore=0, filename=None, h1e_symm=False, pg="d2h"):
         bw = self.bw
         import numpy as np
 
@@ -537,8 +667,12 @@ class DMRGDriver:
         fw_map = np.array([swap_pg(x) for x in range(1, 9)])
         bk_map = np.argsort(fw_map) + 1
         if SymmetryTypes.SZ in bw.symm_type:
-            mh1e = tuple(x.flatten() for x in h1e)
+            if not h1e_symm:
+                mh1e = tuple(x.flatten() for x in h1e)
+            else:
+                mh1e = tuple(x[np.tril_indices(len(x))] for x in h1e)
             mg2e = tuple(x.flatten() for x in g2e)
+            mg2e = (mg2e[0], mg2e[2], mg2e[1])
             fcidump.initialize_sz(
                 self.n_sites,
                 self.target.n,
@@ -549,13 +683,17 @@ class DMRGDriver:
                 mg2e,
             )
         elif g2e is not None:
+            if not h1e_symm:
+                mh1e = h1e.flatten()
+            else:
+                mh1e = h1e[np.tril_indices(len(h1e))]
             fcidump.initialize_su2(
                 self.n_sites,
                 self.target.n,
                 self.target.twos,
                 bk_map[self.target.pg],
                 ecore,
-                h1e.flatten(),
+                mh1e,
                 g2e.flatten(),
             )
         else:
@@ -567,7 +705,11 @@ class DMRGDriver:
                 ecore,
                 h1e.flatten(),
             )
-        fcidump.orb_sym = bw.b.VectorUInt8([bk_map[x] for x in self.orb_sym])
+        if pg == "d2h" or pg == "c2v":
+            orb_sym = [x % 10 for x in self.orb_sym]
+        else:
+            orb_sym = self.orb_sym
+        fcidump.orb_sym = bw.b.VectorUInt8([bk_map[x] for x in orb_sym])
         if filename is not None:
             fcidump.write(filename)
         return fcidump
@@ -596,17 +738,44 @@ class DMRGDriver:
             if iprint >= 1:
                 print("rescaled const = ", fcidump.const_e)
         self.const_e = fcidump.const_e
+        self.ecore = fcidump.const_e
         import numpy as np
 
+        symm_err = fcidump.symmetrize(self.orb_sym)
         if iprint >= 1:
-            print("symmetrize error = ", fcidump.symmetrize(self.orb_sym))
+            print("symmetrize error = ", symm_err)
 
-        self.h1e = np.array(fcidump.h1e_matrix(), copy=False).reshape(
-            (self.n_sites,) * 2
-        )
-        self.g2e = np.array(fcidump.g2e_1fold(), copy=False).reshape(
-            (self.n_sites,) * 4
-        )
+        nn = self.n_sites
+        mm = nn * (nn + 1) // 2
+        ll = mm * (mm + 1) // 2
+        if not fcidump.uhf:
+            self.h1e = np.array(fcidump.h1e_matrix(), copy=False).reshape((nn, nn))
+            if fcidump.general:
+                self.g2e = np.array(fcidump.g2e_1fold(), copy=False).reshape(
+                    (nn, nn, nn, nn)
+                )
+            else:
+                self.g2e = np.array(fcidump.g2e_8fold(), copy=False).reshape((ll,))
+        else:
+            self.h1e = tuple(
+                np.array(fcidump.h1e_matrix(s=s), copy=False).reshape((nn, nn))
+                for s in [0, 1]
+            )
+            if fcidump.general:
+                self.g2e = tuple(
+                    np.array(fcidump.g2e_1fold(sl=sl, sr=sr), copy=False).reshape(
+                        (nn, nn, nn, nn)
+                    )
+                    for sl, sr in [(0, 0), (0, 1), (1, 1)]
+                )
+            else:
+                self.g2e = (
+                    np.array(fcidump.g2e_8fold(sl=0, sr=0), copy=False).reshape((ll,)),
+                    np.array(fcidump.g2e_4fold(sl=0, sr=1), copy=False).reshape(
+                        (mm, mm)
+                    ),
+                    np.array(fcidump.g2e_8fold(sl=1, sr=1), copy=False).reshape((ll,)),
+                )
         return fcidump
 
     def su2_to_sgf(self):
@@ -644,7 +813,10 @@ class DMRGDriver:
             x = [np.array(m, dtype=int) for m in orb_sym]
             mask = 0
             for i in range(hxe.ndim):
-                mask = mask ^ x[i][(None, ) * i + (slice(None), ) + (None, ) * (hxe.ndim - i - 1)]
+                mask = (
+                    mask
+                    ^ x[i][(None,) * i + (slice(None),) + (None,) * (hxe.ndim - i - 1)]
+                )
             mask = mask != 0
             error += np.sum(np.abs(hxe[mask]))
             hxe[mask] = 0
@@ -719,6 +891,11 @@ class DMRGDriver:
         elif algo_type is not None and MPOAlgorithmTypes.CN in algo_type:
             mpo = bw.bs.MPOQC(hamil, bw.b.QCTypes.CN, "HQC")
         elif algo_type is None or MPOAlgorithmTypes.Conventional in algo_type:
+            if hamil.n_sites == 2:
+                print(
+                    "MPOAlgorithmTypes.Conventional with only 2 sites may cause error!"
+                    + "Please use MPOAlgorithmTypes.NC instead!"
+                )
             mpo = bw.bs.MPOQC(hamil, bw.b.QCTypes.Conventional, "HQC")
         else:
             raise RuntimeError("Invalid conventional mpo algo type:", algo_type)
@@ -739,7 +916,7 @@ class DMRGDriver:
                 % (
                     self.mpi.rank if self.mpi is not None else 0,
                     time.perf_counter() - tt,
-                    algo_type.name,
+                    algo_type.name if algo_type is not None else "Conventional",
                     bdim,
                     nnz,
                     sz,
@@ -764,6 +941,32 @@ class DMRGDriver:
     def get_identity_mpo(self):
         return self.get_mpo(self.expr_builder().add_term("", [], 1.0).finalize())
 
+    def unpack_g2e(self, g2e, n_sites=None):
+        import numpy as np
+
+        if n_sites is None:
+            n_sites = self.n_sites
+
+        if g2e.ndim == 1:
+            m = n_sites * (n_sites + 1) // 2
+            xtril = np.tril_indices(m)
+            r = np.zeros((m ** 2,), dtype=g2e.dtype)
+            r[xtril[0] * m + xtril[1]] = g2e
+            r[xtril[1] * m + xtril[0]] = g2e
+            g2e = r.reshape((m, m))
+
+        if g2e.ndim == 2:
+            m = n_sites
+            xtril = np.tril_indices(m)
+            r = np.zeros((m ** 2, m ** 2), dtype=g2e.dtype)
+            r[(xtril[0] * m + xtril[1])[:, None], xtril[0] * m + xtril[1]] = g2e
+            r[(xtril[0] * m + xtril[1])[:, None], xtril[1] * m + xtril[0]] = g2e
+            r[(xtril[1] * m + xtril[0])[:, None], xtril[0] * m + xtril[1]] = g2e
+            r[(xtril[1] * m + xtril[0])[:, None], xtril[1] * m + xtril[0]] = g2e
+            g2e = r.reshape((m, m, m, m))
+
+        return g2e
+
     def get_qc_mpo(
         self,
         h1e,
@@ -776,6 +979,8 @@ class DMRGDriver:
         post_integral_cutoff=1e-20,
         algo_type=None,
         normal_order_ref=None,
+        normal_order_single_ref=None,
+        normal_order_wick=True,
         symmetrize=True,
         sum_mpo_mod=-1,
         compute_accurate_svd_error=True,
@@ -786,11 +991,17 @@ class DMRGDriver:
         disjoint_all_blocks=False,
         disjoint_multiplier=1.0,
         block_max_length=False,
+        add_ident=True,
         iprint=1,
     ):
         import numpy as np
 
         bw = self.bw
+
+        if isinstance(g2e, np.ndarray):
+            g2e = self.unpack_g2e(g2e)
+        elif isinstance(g2e, tuple):
+            g2e = tuple(self.unpack_g2e(x) for x in g2e)
 
         if SymmetryTypes.SZ in bw.symm_type:
             if h1e is not None and isinstance(h1e, np.ndarray) and h1e.ndim == 2:
@@ -944,16 +1155,22 @@ class DMRGDriver:
                     b.add_term(k, x, v)
         else:
             if SymmetryTypes.SU2 in bw.symm_type:
-                h1es, g2es, ecore = NormalOrder.make_su2(
-                    h1e, g2e, ecore, normal_order_ref
-                )
+                if normal_order_single_ref is not None:
+                    assert normal_order_wick
+                    h1es, g2es, ecore = WickNormalOrder.make_su2_open_shell(
+                        h1e, g2e, ecore, normal_order_ref, normal_order_single_ref
+                    )
+                else:
+                    h1es, g2es, ecore = NormalOrder.make_su2(
+                        h1e, g2e, ecore, normal_order_ref, normal_order_wick
+                    )
             elif SymmetryTypes.SZ in bw.symm_type:
                 h1es, g2es, ecore = NormalOrder.make_sz(
-                    h1e, g2e, ecore, normal_order_ref
+                    h1e, g2e, ecore, normal_order_ref, normal_order_wick
                 )
             elif SymmetryTypes.SGF in bw.symm_type:
                 h1es, g2es, ecore = NormalOrder.make_sgf(
-                    h1e, g2e, ecore, normal_order_ref
+                    h1e, g2e, ecore, normal_order_ref, normal_order_wick
                 )
 
             if self.mpi is not None:
@@ -1015,6 +1232,7 @@ class DMRGDriver:
             disjoint_all_blocks=disjoint_all_blocks,
             disjoint_multiplier=disjoint_multiplier,
             block_max_length=block_max_length,
+            add_ident=add_ident,
         )
 
     def get_mpo(
@@ -1033,6 +1251,7 @@ class DMRGDriver:
         disjoint_all_blocks=False,
         disjoint_multiplier=1.0,
         block_max_length=False,
+        add_ident=True,
     ):
         bw = self.bw
         import time
@@ -1078,7 +1297,8 @@ class DMRGDriver:
                 self.mpi.barrier()
 
         mpo = bw.bs.SimplifiedMPO(mpo, bw.bs.Rule(), False, False)
-        mpo = bw.bs.IdentityAddedMPO(mpo)
+        if add_ident:
+            mpo = bw.bs.IdentityAddedMPO(mpo)
         if self.mpi:
             mpo = bw.bs.ParallelMPO(mpo, self.prule)
         return mpo
@@ -1200,6 +1420,64 @@ class DMRGDriver:
         bx = b.finalize()
         return self.get_mpo(bx, iprint)
 
+    def get_mpo_any_fermionic(self, op_list, ecore=None, **kwargs):
+        """
+        Args:
+            op_list : list[tuple[str, float]]
+                A list of second quantized fermionic operators and coefficients.
+                + is creation, - is destroy.
+                Example: [
+                    ('+_3 +_4 -_1 -_3', 0.0068705380508780715),
+                    ('+_3 +_4 -_4 -_3', -0.009852150878546906)
+                ]
+            ecore : core energy
+        """
+        from itertools import groupby
+
+        assert SymmetryTypes.SGF in self.symm_type
+        b = self.expr_builder()
+        kmap = {"+": "C", "-": "D"}
+        pattern = lambda x: "".join(p[0] for p in x[0].split())
+        op_dict = {
+            k: list(g) for k, g in groupby(sorted(op_list, key=pattern), key=pattern)
+        }
+        exprs = ["".join(kmap[x] for x in k) for k in op_dict.keys()]
+        indices = [
+            [int(x.split("_")[1]) for h, _ in g for x in h.split(" ")]
+            for g in op_dict.values()
+        ]
+        values = [[v for _, v in g] for g in op_dict.values()]
+        for ex, ix, vl, in zip(exprs, indices, values):
+            b.add_term(ex, ix, vl)
+        if ecore is not None:
+            b.add_const(ecore)
+        return self.get_mpo(b.finalize(), **kwargs)
+
+    def get_mpo_any_pauli(self, op_list, ecore=None, **kwargs):
+        """
+        Args:
+            op_list : list[tuple[str, float]]
+                A list of Pauli strings and coefficients.
+                Characters in the string can be IXYZ.
+                Example: [
+                    ('IIXXXIIX', 0.0559742284070319),
+                    ('IIIXIIXZ', 0.0018380565450674)
+                ]
+            ecore : core energy
+        """
+        assert SymmetryTypes.SGB in self.symm_type
+        import numpy as np
+
+        b = self.expr_builder()
+        idxs = np.arange(self.n_sites, dtype=int)
+        for ops, val in op_list:
+            num_y = ops.count("Y")
+            assert num_y % 2 == 0
+            b.add_term(ops, idxs, val.real * (1 - num_y % 4))
+        if ecore is not None:
+            b.add_const(ecore)
+        return self.get_mpo(b.finalize(adjust_order=False), **kwargs)
+
     def orbital_reordering(self, h1e, g2e):
         bw = self.bw
         import numpy as np
@@ -1281,12 +1559,119 @@ class DMRGDriver:
             return None
         me.init_environments(iprint >= 2)
         ener = dmrg.solve(n_sweeps, ket.center == 0, tol)
+
+        if self.clean_scratch:
+            dmrg.me.remove_partition_files()
+            for me in dmrg.ext_mes:
+                me.remove_partition_files()
+
         ket.info.bond_dim = max(ket.info.bond_dim, bond_dims[-1])
         if isinstance(ket, bw.bs.MultiMPS):
             ener = list(dmrg.energies[-1])
         if self.mpi is not None:
             self.mpi.barrier()
         return ener
+
+    def td_dmrg(
+        self,
+        mpo,
+        ket,
+        delta_t=None,
+        target_t=None,
+        final_mps_tag=None,
+        te_type="rk4",
+        n_steps=None,
+        bond_dims=None,
+        n_sub_sweeps=2,
+        normalize_mps=False,
+        hermitian=False,
+        iprint=0,
+        cutoff=1e-20,
+    ):
+        bw = self.bw
+        import numpy as np
+
+        if n_steps is None:
+            n_steps = int(abs(target_t) / abs(delta_t) + 0.1)
+        elif target_t is None:
+            target_t = n_steps * delta_t
+        elif delta_t is None:
+            delta_t = target_t / n_steps
+
+        assert np.abs(abs(n_steps * delta_t) - abs(target_t)) < 1e-10
+        is_imag_te = abs(np.imag(delta_t)) < 1e-10
+
+        if iprint:
+            print(
+                "Time Evolution  DELTA T = RE %15.8f + IM %15.8f"
+                % (np.real(delta_t), np.imag(delta_t))
+            )
+            print(
+                "Time Evolution TARGET T = RE %15.8f + IM %15.8f"
+                % (np.real(target_t), np.imag(target_t))
+            )
+            print("Time Evolution   NSTEPS = %10d" % n_steps)
+
+        mket = ket.deep_copy("TD-KET@TMP")
+
+        me = bw.bs.MovingEnvironment(mpo, mket, mket, "TDDMRG")
+        me.delayed_contraction = bw.b.OpNamesSet.normal_ops()
+        me.cached_contraction = True
+        me.init_environments(iprint >= 2)
+
+        if bond_dims is None:
+            bond_dims = [mket.info.bond_dim]
+
+        te = bw.bs.TimeEvolution(
+            me,
+            bw.b.VectorUBond(bond_dims),
+            bw.b.TETypes.RK4 if te_type == "rk4" else bw.b.TETypes.TangentSpace,
+        )
+        te.hermitian = hermitian
+        te.iprint = iprint
+        te.n_sub_sweeps = 1
+        if te.mode != bw.b.TETypes.TangentSpace:
+            te.n_sub_sweeps = n_sub_sweeps
+        te.normalize_mps = normalize_mps
+        te.cutoff = cutoff
+
+        te_times = []
+        te_energies = []
+        te_normsqs = []
+        te_discarded_weights = []
+        for i in range(n_steps):
+            if te.mode == bw.b.TETypes.TangentSpace:
+                te.solve(2, delta_t / 2, mket.center == 0)
+            else:
+                te.solve(1, delta_t, mket.center == 0)
+            if is_imag_te and iprint:
+                print(
+                    "T = %10.5f <E> = %20.15f <Norm^2> = %20.15f"
+                    % ((i + 1) * delta_t, te.energies[-1], te.normsqs[-1])
+                )
+            elif iprint:
+                print(
+                    "T = RE %10.5f + IM %10.5f <E> = %20.15f <Norm^2> = %20.15f"
+                    % (
+                        (i + 1) * np.real(delta_t),
+                        (i + 1) * np.imag(delta_t),
+                        te.energies[-1],
+                        te.normsqs[-1],
+                    )
+                )
+            te_times.append((i + 1) * delta_t)
+            te_energies.append(te.energies[-1])
+            te_normsqs.append(te.normsqs[-1])
+            te_discarded_weights.append(te.discarded_weights[-1])
+
+        from collections import namedtuple
+
+        TEResult = namedtuple("TEResult", ["times", "energies", "normsqs", "dws"])
+        self._te = TEResult(te_times, te_energies, te_normsqs, te_discarded_weights)
+
+        return mket.deep_copy(
+            "TD-" + ket.info.tag if final_mps_tag is None else final_mps_tag
+        )
 
     def get_dmrg_results(self):
         import numpy as np
@@ -1338,9 +1723,14 @@ class DMRGDriver:
 
         return mpos
 
-    def get_orbital_entropies(self, ket, orb_type=1, ij_symm=True, iprint=0):
+    def get_orbital_entropies(
+        self, ket, orb_type=1, ij_symm=True, use_npdm=True, iprint=0
+    ):
         bw = self.bw
         import numpy as np
+
+        if use_npdm:
+            return self.get_orbital_entropies_use_npdm(ket, orb_type, iprint=iprint)
 
         mpos = self.get_n_orb_rdm_mpos(
             orb_type=orb_type, ij_symm=ij_symm, iprint=iprint
@@ -1371,14 +1761,66 @@ class DMRGDriver:
                 ents[ih[::-1]] = ents[ih]
         return ents
 
-    def get_orbital_interaction_matrix(self, ket, iprint=0):
+    def get_orbital_entropies_use_npdm(self, ket, orb_type=1, iprint=0):
         import numpy as np
 
-        s1 = self.get_orbital_entropies(ket, orb_type=1, iprint=iprint)
-        s2 = self.get_orbital_entropies(ket, orb_type=2, iprint=iprint)
+        ents = np.zeros((self.n_sites,) * orb_type)
+        mket = ket.deep_copy(ket.info.tag + "@ORB-ENT-TMP")
+        if orb_type == 1:
+            exprs, nx = OrbitalEntropy.get_one_orb_rdm_exprs()
+        else:
+            exprs, nx = OrbitalEntropy.get_two_orb_rdm_exprs()
+
+        rrdms = np.zeros(ents.shape + (nx,))
+        for (k, m), v in exprs.items():
+            pdm = self.get_npdm(
+                mket, pdm_type=len(k) // 2, npdm_expr=k, mask=list(m), iprint=iprint
+            )[0]
+            for ix, f in v:
+                if orb_type == 1:
+                    rrdms[..., ix] += pdm * f
+                elif orb_type == 2:
+                    if len(set(m)) == 0:
+                        rrdms[..., ix] += pdm[None, None] * f
+                    elif len(set(m)) == 1 and m[0] == 0:
+                        rrdms[..., ix] += pdm[:, None] * f
+                    elif len(set(m)) == 1 and m[0] == 1:
+                        rrdms[..., ix] += pdm[None, :] * f
+                    else:
+                        rrdms[..., ix] += pdm * f
+
+        if orb_type == 1:
+            for i in range(self.n_sites):
+                ld = np.array(rrdms[i])
+                ld[np.abs(ld) < 1e-14] = 0
+                ld = ld[ld != 0]
+                ent = float(np.sum(-ld * np.log(ld)))
+                ents[i] = ent
+        elif orb_type == 2:
+            for i in range(self.n_sites):
+                for j in range(self.n_sites):
+                    ld = np.array(rrdms[i, j])
+                    ld = OrbitalEntropy.get_two_orb_rdm_eigvals(ld, diag_only=i == j)
+                    ld[np.abs(ld) < 1e-14] = 0
+                    ld = ld[ld != 0]
+                    ent = float(np.sum(-ld * np.log(ld)))
+                    ents[i, j] = ent
+        return ents
+
+    def get_orbital_interaction_matrix(self, ket, use_npdm=True, iprint=0):
+        import numpy as np
+
+        s1 = self.get_orbital_entropies(
+            ket, orb_type=1, use_npdm=use_npdm, iprint=iprint
+        )
+        s2 = self.get_orbital_entropies(
+            ket, orb_type=2, use_npdm=use_npdm, iprint=iprint
+        )
         return 0.5 * (s1[:, None] + s1[None, :] - s2) * (1 - np.identity(len(s1)))
 
-    def get_npdm(self, ket, pdm_type=1, bra=None, soc=False, site_type=1, iprint=0):
+    def get_conventional_npdm(
+        self, ket, pdm_type=1, bra=None, soc=False, site_type=1, iprint=0
+    ):
         bw = self.bw
         import numpy as np
 
@@ -1402,6 +1844,7 @@ class DMRGDriver:
                     mps.canonical_form = "K" + mps.canonical_form[1:]
                 else:
                     assert False
+                mps.save_data()
 
             if self.mpi is not None:
                 self.mpi.barrier()
@@ -1451,6 +1894,9 @@ class DMRGDriver:
         # expect.algo_type = bw.b.ExpectationAlgorithmTypes.Normal
         expect.iprint = iprint
         expect.solve(True, mket.center == 0)
+
+        if self.clean_scratch:
+            expect.me.remove_partition_files()
 
         if pdm_type == 1:
             if SymmetryTypes.SZ in bw.symm_type:
@@ -1507,17 +1953,320 @@ class DMRGDriver:
             self.mpi.barrier()
         return dm
 
+    def get_conventional_1pdm(self, ket, *args, **kwargs):
+        return self.get_conventional_npdm(ket, pdm_type=1, *args, **kwargs)
+
+    def get_conventional_2pdm(self, ket, *args, **kwargs):
+        return self.get_conventional_npdm(ket, pdm_type=2, *args, **kwargs)
+
+    def get_conventional_trans_1pdm(self, bra, ket, *args, **kwargs):
+        return self.get_conventional_npdm(ket, pdm_type=1, bra=bra, *args, **kwargs)
+
+    def get_conventional_trans_2pdm(self, bra, ket, *args, **kwargs):
+        return self.get_conventional_npdm(ket, pdm_type=2, bra=bra, *args, **kwargs)
+
+    def get_npdm(
+        self,
+        ket,
+        pdm_type=1,
+        bra=None,
+        soc=False,
+        site_type=0,
+        algo_type=None,
+        npdm_expr=None,
+        mask=None,
+        simulated_parallel=0,
+        fused_contraction_rotation=True,
+        cutoff=1e-24,
+        iprint=0,
+    ):
+        bw = self.bw
+        import numpy as np
+
+        if algo_type is None:
+            algo_type = NPDMAlgorithmTypes.Default
+
+        if NPDMAlgorithmTypes.Conventional in algo_type or soc:
+            return self.get_conventional_npdm(
+                ket, pdm_type, bra, soc, site_type, iprint
+            )
+
+        if self.mpi is not None:
+            self.mpi.barrier()
+
+        if SymmetryTypes.SU2 in bw.symm_type:
+            if npdm_expr is not None and "%s" not in npdm_expr:
+                op_str = npdm_expr
+            else:
+                su2_coupling = "((C+%s)1+D)0" if npdm_expr is None else npdm_expr
+                op_str = "(C+D)0"
+                for _ in range(pdm_type - 1):
+                    op_str = su2_coupling % op_str
+            if mask is None:
+                perm = bw.b.SpinPermScheme.initialize_su2(pdm_type * 2, op_str, True)
+            else:
+                perm = bw.b.SpinPermScheme.initialize_su2(
+                    pdm_type * 2, op_str, True, mask=bw.b.VectorUInt16(mask)
+                )
+            perms = bw.b.VectorSpinPermScheme([perm])
+        elif SymmetryTypes.SZ in bw.symm_type:
+            if npdm_expr is not None and isinstance(npdm_expr, str):
+                op_str = [npdm_expr]
+            elif npdm_expr is not None:
+                op_str = npdm_expr
+            else:
+                op_str = ["cd", "CD"]
+                for _ in range(pdm_type - 1):
+                    op_str = ["c%sd" % x for x in op_str] + ["C%sD" % op_str[-1]]
+            if mask is None:
+                perms = bw.b.VectorSpinPermScheme(
+                    [
+                        bw.b.SpinPermScheme.initialize_sz(pdm_type * 2, cd, True)
+                        for cd in op_str
+                    ]
+                )
+            else:
+                perms = bw.b.VectorSpinPermScheme(
+                    [
+                        bw.b.SpinPermScheme.initialize_sz(
+                            pdm_type * 2, cd, True, mask=bw.b.VectorUInt16(mask)
+                        )
+                        for cd in op_str
+                    ]
+                )
+        elif SymmetryTypes.SGF in bw.symm_type:
+            if npdm_expr is not None and isinstance(npdm_expr, str):
+                op_str = [npdm_expr]
+            elif npdm_expr is not None:
+                op_str = npdm_expr
+            else:
+                op_str = "C" * pdm_type + "D" * pdm_type
+            if mask is None:
+                perm = bw.b.SpinPermScheme.initialize_sz(pdm_type * 2, op_str, True)
+            else:
+                perm = bw.b.SpinPermScheme.initialize_sz(
+                    pdm_type * 2, op_str, True, mask=bw.b.VectorUInt16(mask)
+                )
+            perms = bw.b.VectorSpinPermScheme([perm])
+
+        if iprint >= 1:
+            print("npdm string =", op_str)
+
+        if iprint >= 3:
+            for perm in perms:
+                print(perm.to_str())
+
+        if simulated_parallel != 0 and self.mpi is not None:
+            raise RuntimeError("Cannot simulate parallel in parallel mode!")
+
+        sp_size = 1 if simulated_parallel == 0 else simulated_parallel
+        sp_file_names = []
+
+        for sp_rank in range(sp_size):
+
+            if iprint >= 1 and simulated_parallel != 0:
+                print("simulated parallel rank =", sp_rank)
+
+            mket = ket.deep_copy("PDM-KET@TMP")
+            mpss = [mket]
+            if bra is not None and bra != ket:
+                mbra = bra.deep_copy("PDM-BRA@TMP")
+                mpss.append(mbra)
+            else:
+                mbra = mket
+
+            for mps in mpss:
+                if mps.dot == 2 and site_type != 2:
+                    mps.dot = 1
+                    if mps.center == mps.n_sites - 2:
+                        mps.center = mps.n_sites - 1
+                        mps.canonical_form = mps.canonical_form[:-1] + "S"
+                    elif mps.center == 0:
+                        mps.canonical_form = "K" + mps.canonical_form[1:]
+                    else:
+                        assert False
+                    mps.save_data()
+
+                if self.mpi is not None:
+                    self.mpi.barrier()
+
+                mps.load_mutable()
+                mps.info.bond_dim = max(
+                    mps.info.bond_dim, mps.info.get_max_bond_dimension()
+                )
+
+            self.align_mps_center(mbra, mket)
+
+            scheme = bw.b.NPDMScheme(perms)
+            if iprint >= 4:
+                print(scheme.to_str())
+            pmpo = bw.bs.GeneralNPDMMPO(
+                self.ghamil, scheme, NPDMAlgorithmTypes.SymbolFree in algo_type
+            )
+            pmpo.iprint = 2 if iprint >= 4 else min(iprint, 1)
+            if self.mpi:
+                pmpo.parallel_rule = self.prule
+            if simulated_parallel != 0:
+                sp_rule = bw.bs.ParallelRuleSimple(
+                    bw.b.ParallelSimpleTypes.Nothing,
+                    bw.bs.ParallelCommunicator(sp_size, sp_rank, 0),
+                )
+                assert sp_rule.is_root()
+                pmpo.parallel_rule = sp_rule
+            pmpo.build()
+
+            pmpo = bw.bs.SimplifiedMPO(pmpo, bw.bs.Rule(), False, False)
+            if self.mpi:
+                pmpo = bw.bs.ParallelMPO(pmpo, self.prule)
+            if simulated_parallel != 0:
+                pmpo = bw.bs.ParallelMPO(pmpo, sp_rule)
+
+            pme = bw.bs.MovingEnvironment(pmpo, mbra, mket, "NPDM")
+            if fused_contraction_rotation:
+                pme.cached_contraction = False
+                pme.fused_contraction_rotation = True
+            else:
+                pme.cached_contraction = True
+                pme.fused_contraction_rotation = False
+            pme.init_environments(iprint >= 2)
+            expect = bw.bs.Expect(pme, mbra.info.bond_dim, mket.info.bond_dim)
+            expect.cutoff = cutoff
+            if site_type == 0:
+                expect.zero_dot_algo = True
+            if NPDMAlgorithmTypes.SymbolFree in algo_type:
+                expect.algo_type = bw.b.ExpectationAlgorithmTypes.SymbolFree
+                if NPDMAlgorithmTypes.LowMem in algo_type:
+                    expect.algo_type = (
+                        expect.algo_type | bw.b.ExpectationAlgorithmTypes.LowMem
+                    )
+                if NPDMAlgorithmTypes.Compressed in algo_type:
+                    expect.algo_type = (
+                        expect.algo_type | bw.b.ExpectationAlgorithmTypes.Compressed
+                    )
+            elif NPDMAlgorithmTypes.Normal in algo_type:
+                expect.algo_type = bw.b.ExpectationAlgorithmTypes.Normal
+            elif NPDMAlgorithmTypes.Fast in algo_type:
+                expect.algo_type = bw.b.ExpectationAlgorithmTypes.Fast
+            else:
+                expect.algo_type = bw.b.ExpectationAlgorithmTypes.Automatic
+
+            expect.iprint = iprint
+            expect.solve(True, mket.center == 0)
+
+            if simulated_parallel != 0:
+                if (
+                    NPDMAlgorithmTypes.Compressed in algo_type
+                    or expect.algo_type == bw.b.ExpectationAlgorithmTypes.Automatic
+                ):
+                    sp_file_names.append(
+                        pme.get_npdm_fragment_filename(-1)[:-2] + "%d.fpc"
+                    )
+                else:
+                    sp_file_names.append(
+                        pme.get_npdm_fragment_filename(-1)[:-2] + "%d.npy"
+                    )
+
+            if self.clean_scratch:
+                expect.me.remove_partition_files()
+
+        if simulated_parallel != 0:
+
+            if iprint >= 1 and simulated_parallel != 0:
+                print("simulated parallel accumulate files...")
+
+            scheme = bw.b.NPDMScheme(perms)
+            pmpo = bw.bs.GeneralNPDMMPO(
+                self.ghamil, scheme, NPDMAlgorithmTypes.SymbolFree in algo_type
+            )
+            # recover the default serial prefix
+            sp_rule = bw.bs.ParallelRuleSimple(
+                bw.b.ParallelSimpleTypes.Nothing, bw.bs.ParallelCommunicator(1, 0, 0)
+            )
+            pmpo.iprint = 2 if iprint >= 4 else min(iprint, 1)
+            pmpo.build()
+            pme = bw.bs.MovingEnvironment(pmpo, mbra, mket, "NPDM-SUM")
+
+            fp_codec = bw.b.DoubleFPCodec()
+            for i in range(self.n_sites - 1):
+                data = 0
+                if sp_file_names[0][-4:] == ".fpc":
+                    for j in range(sp_size):
+                        data = data + fp_codec.load(sp_file_names[j] % i)
+                    fp_codec.save(pme.get_npdm_fragment_filename(i) + ".fpc", data)
+                else:
+                    for j in range(sp_size):
+                        data = data + np.load(sp_file_names[j] % i)
+                    np.save(pme.get_npdm_fragment_filename(i) + ".npy", data)
+
+            expect = bw.bs.Expect(pme, mbra.info.bond_dim, mket.info.bond_dim)
+            if site_type == 0:
+                expect.zero_dot_algo = True
+            if NPDMAlgorithmTypes.SymbolFree in algo_type:
+                expect.algo_type = bw.b.ExpectationAlgorithmTypes.SymbolFree
+                if NPDMAlgorithmTypes.LowMem in algo_type:
+                    expect.algo_type = (
+                        expect.algo_type | bw.b.ExpectationAlgorithmTypes.LowMem
+                    )
+                if NPDMAlgorithmTypes.Compressed in algo_type:
+                    expect.algo_type = (
+                        expect.algo_type | bw.b.ExpectationAlgorithmTypes.Compressed
+                    )
+            elif NPDMAlgorithmTypes.Normal in algo_type:
+                expect.algo_type = bw.b.ExpectationAlgorithmTypes.Normal
+            elif NPDMAlgorithmTypes.Fast in algo_type:
+                expect.algo_type = bw.b.ExpectationAlgorithmTypes.Fast
+            else:
+                expect.algo_type = bw.b.ExpectationAlgorithmTypes.Automatic
+
+            expect.iprint = iprint
+
+        npdms = list(expect.get_npdm())
+
+        if SymmetryTypes.SU2 in bw.symm_type:
+            for ip in range(len(npdms)):
+                npdms[ip] *= np.array(np.sqrt(2.0)) ** (scheme.n_max_ops // 2)
+        else:
+            for ip in range(len(npdms)):
+                npdms[ip] = np.array(npdms[ip], copy=False)
+
+        if self.reorder_idx is not None:
+            rev_idx = np.argsort(self.reorder_idx)
+            for ip in range(len(npdms)):
+                for i in range(scheme.n_max_ops):
+                    npdms[ip] = npdms[ip][(slice(None),) * i + (rev_idx,)]
+
+        if self.mpi is not None:
+            self.mpi.barrier()
+
+        if SymmetryTypes.SU2 in bw.symm_type or SymmetryTypes.SGF in bw.symm_type:
+            assert len(npdms) == 1
+            npdms = npdms[0]
+
+        return npdms
+
     def get_1pdm(self, ket, *args, **kwargs):
         return self.get_npdm(ket, pdm_type=1, *args, **kwargs)
 
     def get_2pdm(self, ket, *args, **kwargs):
         return self.get_npdm(ket, pdm_type=2, *args, **kwargs)
 
+    def get_3pdm(self, ket, *args, **kwargs):
+        return self.get_npdm(ket, pdm_type=3, *args, **kwargs)
+
+    def get_4pdm(self, ket, *args, **kwargs):
+        return self.get_npdm(ket, pdm_type=4, *args, **kwargs)
+
     def get_trans_1pdm(self, bra, ket, *args, **kwargs):
         return self.get_npdm(ket, pdm_type=1, bra=bra, *args, **kwargs)
 
     def get_trans_2pdm(self, bra, ket, *args, **kwargs):
         return self.get_npdm(ket, pdm_type=2, bra=bra, *args, **kwargs)
+
+    def get_trans_3pdm(self, bra, ket, *args, **kwargs):
+        return self.get_npdm(ket, pdm_type=3, bra=bra, *args, **kwargs)
+
+    def get_trans_4pdm(self, bra, ket, *args, **kwargs):
+        return self.get_npdm(ket, pdm_type=4, bra=bra, *args, **kwargs)
 
     def align_mps_center(self, ket, ref):
         if self.mpi is not None:
@@ -1543,7 +2292,9 @@ class DMRGDriver:
         if self.mpi is not None:
             self.mpi.barrier()
 
-    def adjust_mps(self, ket, dot=1):
+    def adjust_mps(self, ket, dot=None):
+        if dot is None:
+            dot = ket.dot
         bw = self.bw
         if ket.center == 0 and dot == 2:
             if self.mpi is not None:
@@ -1551,7 +2302,6 @@ class DMRGDriver:
             if ket.canonical_form[ket.center] in "ST":
                 ket.flip_fused_form(ket.center, self.ghamil.opf.cg, self.prule)
             ket.save_data()
-            forward = True
             if self.mpi is not None:
                 self.mpi.barrier()
             ket.load_mutable()
@@ -1609,7 +2359,10 @@ class DMRGDriver:
         if self.mpi is not None:
             self.mpi.barrier()
         assert isinstance(ket, bw.bs.MultiMPS)
-        iket = ket.extract(iroot, tag + "@TMP")
+        if len(ket.info.targets) == 1:
+            iket = ket.extract(iroot, tag + "@TMP")
+        else:
+            iket = ket.extract(iroot, tag)
         if self.mpi is not None:
             self.mpi.barrier()
         if len(iket.info.targets) == 1:
@@ -1629,6 +2382,8 @@ class DMRGDriver:
         tol=1e-8,
         bond_dims=None,
         bra_bond_dims=None,
+        noises=None,
+        noise_mpo=None,
         cutoff=1e-24,
         iprint=0,
     ):
@@ -1640,31 +2395,61 @@ class DMRGDriver:
         if bra_bond_dims is None:
             bra_bond_dims = [bra.info.bond_dim]
         self.align_mps_center(bra, ket)
+        if noises is not None and noises[0] != 0:
+            pme = bw.bs.MovingEnvironment(noise_mpo, bra, bra, "PERT-CPS")
+            pme.init_environments(iprint >= 2)
+        else:
+            pme = None
         me = bw.bs.MovingEnvironment(mpo, bra, ket, "MULT")
         me.delayed_contraction = bw.b.OpNamesSet.normal_ops()
-        me.cached_contraction = True
+        me.cached_contraction = pme is None  # not allowed by perturbative noise
         me.init_environments(iprint >= 2)
-        cps = bw.bs.Linear(
-            me, bw.b.VectorUBond(bra_bond_dims), bw.b.VectorUBond(bond_dims)
-        )
+        if noises is None or noises[0] == 0:
+            cps = bw.bs.Linear(
+                pme, me, bw.b.VectorUBond(bra_bond_dims), bw.b.VectorUBond(bond_dims)
+            )
+        else:
+            cps = bw.bs.Linear(
+                pme,
+                me,
+                bw.b.VectorUBond(bra_bond_dims),
+                bw.b.VectorUBond(bond_dims),
+                bw.VectorFP(noises),
+            )
+        if pme is not None:
+            cps.noise_type = bw.b.NoiseTypes.ReducedPerturbative
+            cps.eq_type = bw.b.EquationTypes.PerturbativeCompression
         cps.iprint = iprint
         cps.cutoff = cutoff
         norm = cps.solve(n_sweeps, ket.center == 0, tol)
+
+        if self.clean_scratch:
+            me.remove_partition_files()
+
         if self.mpi is not None:
             self.mpi.barrier()
         return norm
 
     def expectation(self, bra, mpo, ket, iprint=0):
         bw = self.bw
-        bond_dim = max(bra.info.bond_dim, ket.info.bond_dim)
-        self.align_mps_center(bra, ket)
-        me = bw.bs.MovingEnvironment(mpo, bra, ket, "EXPT")
+        mbra = bra.deep_copy("EXPE-BRA@TMP")
+        if bra != ket:
+            mket = ket.deep_copy("EXPE-KET@TMP")
+        else:
+            mket = mbra
+        bond_dim = max(mbra.info.bond_dim, mket.info.bond_dim)
+        self.align_mps_center(mbra, mket)
+        me = bw.bs.MovingEnvironment(mpo, mbra, mket, "EXPT")
         me.delayed_contraction = bw.b.OpNamesSet.normal_ops()
         me.cached_contraction = True
         me.init_environments(iprint >= 2)
         expect = bw.bs.Expect(me, bond_dim, bond_dim)
         expect.iprint = iprint
-        ex = expect.solve(False, ket.center != 0)
+        ex = expect.solve(False, mket.center != 0)
+
+        if self.clean_scratch:
+            me.remove_partition_files()
+
         if self.mpi is not None:
             self.mpi.barrier()
         return ex
@@ -1890,6 +2675,11 @@ class SOCDMRGDriver(DMRGDriver):
         cpx_me.init_environments(iprint >= 2)
         self._dmrg.cpx_me = cpx_me
         ener = self._dmrg.solve(n_sweeps, ket.center == 0, tol)
+
+        if self.clean_scratch:
+            self._dmrg.me.remove_partition_files()
+            self._dmrg.cpx_me.remove_partition_files()
+
         ket.info.bond_dim = max(ket.info.bond_dim, self._dmrg.bond_dims[-1])
         if isinstance(ket, bw.bs.MultiMPS):
             ener = list(self._dmrg.energies[-1])
@@ -2080,8 +2870,11 @@ class NormalOrder:
         return gctr
 
     @staticmethod
-    def make_su2(h1e, g2e, const_e, cidx):
+    def make_su2(h1e, g2e, const_e, cidx, use_wick):
         import numpy as np
+
+        if use_wick:
+            return WickNormalOrder.make_su2(h1e, g2e, const_e, cidx)
 
         ix = NormalOrder.def_ix(cidx)
         gctr = NormalOrder.def_gctr(cidx, h1e, g2e)
@@ -2125,8 +2918,11 @@ class NormalOrder:
         return h1es, g2es, const_es
 
     @staticmethod
-    def make_sz(h1e, g2e, const_e, cidx):
+    def make_sz(h1e, g2e, const_e, cidx, use_wick):
         import numpy as np
+
+        if use_wick:
+            return WickNormalOrder.make_sz(h1e, g2e, const_e, cidx)
 
         g2e = [g2e[0], g2e[1], g2e[1].transpose(2, 3, 0, 1), g2e[2]]
         ix = NormalOrder.def_ix(cidx)
@@ -2204,8 +3000,11 @@ class NormalOrder:
         return h1es, g2es, const_es
 
     @staticmethod
-    def make_sgf(h1e, g2e, const_e, cidx):
+    def make_sgf(h1e, g2e, const_e, cidx, use_wick):
         import numpy as np
+
+        if use_wick:
+            return WickNormalOrder.make_sgf(h1e, g2e, const_e, cidx)
 
         ix = NormalOrder.def_ix(cidx)
         gctr = NormalOrder.def_gctr(cidx, h1e, g2e)
@@ -2250,8 +3049,384 @@ class NormalOrder:
         return h1es, g2es, const_es
 
 
+class WickNormalOrder:
+    @staticmethod
+    def make_su2(h1e, g2e, const_e, cidx, iprint=1):
+        import block2 as b
+        import numpy as np
+
+        if iprint:
+            print("-- Normal order (su2) using Wick's theorem")
+
+        try:
+            idx_map = b.MapWickIndexTypesSet()
+        except ImportError:
+            raise RuntimeError("block2 needs to be compiled with '-DUSE_IC=ON'!")
+
+        idx_map[b.WickIndexTypes.Inactive] = b.WickIndex.parse_set("pqrsijklmno")
+        idx_map[b.WickIndexTypes.External] = b.WickIndex.parse_set("pqrsabcdefg")
+        perm_map = b.MapPStrIntVectorWickPermutation()
+        perm_map[("v", 4)] = b.WickPermutation.qc_chem()
+
+        P = lambda x: b.WickExpr.parse(x, idx_map, perm_map)
+        h = P("SUM <pq> h[pq] E1[p,q] + 0.5 SUM <pqrs> v[prqs] E2[pq,rs]")
+        eq = h.expand(-1, False, False).simplify()
+        WickSpinAdaptation.adjust_spin_coupling(eq)
+        exprs = WickSpinAdaptation.get_eq_exprs(eq)
+
+        dts = {}
+        const_es = const_e
+        tensor_d = {"h": h1e, "v": g2e}
+
+        is_inactive = (
+            lambda x: (x & b.WickIndexTypes.Inactive) != b.WickIndexTypes.Nothing
+        )
+
+        def ix(x):
+            p = {"I": cidx, "E": ~cidx}
+            r = np.outer(p[x[0]], p[x[1]])
+            for i in range(2, len(x)):
+                r = np.outer(r, p[x[i]])
+            return r.reshape((len(cidx),) * len(x))
+
+        def tx(x, ix):
+            for ig, ii in enumerate(ix):
+                idx = (slice(None),) * ig
+                idx += (cidx if is_inactive(ii.types) else ~cidx,)
+                x = x[idx]
+            return x
+
+        xiter = 0
+        for term, (wf, wex) in zip(eq.terms, exprs):
+            if len(wex) != 0 and wex not in dts:
+                op_len = wex.count("C") + wex.count("D")
+                if op_len not in dts:
+                    dts[op_len] = {}
+                if wex not in dts[op_len]:
+                    dts[op_len][wex] = np.zeros((len(cidx),) * op_len, dtype=h1e.dtype)
+                dtx = dts[op_len][wex]
+            tensors = []
+            opidx = []
+            result = ""
+            mask = ""
+            f = term.factor * wf
+            for t in term.tensors:
+                if t.type == b.WickTensorTypes.Tensor:
+                    tensors.append(tx(tensor_d[t.name], t.indices))
+                    opidx.append("".join([i.name for i in t.indices]))
+                else:
+                    mask += "I" if is_inactive(t.indices[0].types) else "E"
+                    result += t.indices[0].name
+            np_str = ",".join(opidx) + "->" + result
+            if 0 not in [x.size for x in tensors]:
+                ts = f * np.einsum(np_str, *tensors, optimize=True)
+                if len(wex) == 0:
+                    const_es += ts
+                else:
+                    dtx[ix(mask)] += ts.flatten()
+            if iprint:
+                xr = ("%20.15f" % const_es) if wex == "" else wex
+                print("%4d / %4d --" % (xiter, len(eq.terms)), xr, np_str, mask, f)
+            xiter += 1
+        assert sorted(dts.keys()) == [2, 4]
+        return dts[2], dts[4], const_es
+
+    @staticmethod
+    def make_su2_open_shell(h1e, g2e, const_e, cidx, midx, iprint=1):
+        import block2 as b
+        import numpy as np
+
+        if iprint:
+            print("-- Normal order (su2 open shell) using Wick's theorem")
+
+        try:
+            idx_map = b.MapWickIndexTypesSet()
+        except ImportError:
+            raise RuntimeError("block2 needs to be compiled with '-DUSE_IC=ON'!")
+
+        idx_map[b.WickIndexTypes.Inactive] = b.WickIndex.parse_set("pqrsijklmno")
+        idx_map[b.WickIndexTypes.External] = b.WickIndex.parse_set("pqrsabcdefg")
+        idx_map[b.WickIndexTypes.Single] = b.WickIndex.parse_set("pqrsrstuvwx")
+        perm_map = b.MapPStrIntVectorWickPermutation()
+        perm_map[("v", 4)] = b.WickPermutation.qc_chem()
+
+        P = lambda x: b.WickExpr.parse(x, idx_map, perm_map)
+        h = P("SUM <pq> h[pq] E1[p,q] + 0.5 SUM <pqrs> v[prqs] E2[pq,rs]")
+        eq = h.expand(-1, False, False).simplify()
+
+        WickSpinAdaptation.adjust_spin_coupling(eq)
+        exprs = WickSpinAdaptation.get_eq_exprs(eq)
+
+        dts = {}
+        const_es = const_e
+        tensor_d = {"h": h1e, "v": g2e}
+
+        is_inactive = (
+            lambda x: (x & b.WickIndexTypes.Inactive) != b.WickIndexTypes.Nothing
+        )
+        is_single = lambda x: (x & b.WickIndexTypes.Single) != b.WickIndexTypes.Nothing
+
+        def ix(x):
+            p = {"I": cidx, "S": midx, "E": ~cidx & ~midx}
+            r = np.outer(p[x[0]], p[x[1]])
+            for i in range(2, len(x)):
+                r = np.outer(r, p[x[i]])
+            return r.reshape((len(cidx),) * len(x))
+
+        def tx(x, ix):
+            for ig, ii in enumerate(ix):
+                idx = (slice(None),) * ig
+                idx += (
+                    cidx
+                    if is_inactive(ii.types)
+                    else (midx if is_single(ii.types) else ~cidx & ~midx),
+                )
+                x = x[idx]
+            return x
+
+        xiter = 0
+        for term, (wf, wex) in zip(eq.terms, exprs):
+            if len(wex) != 0 and wex not in dts:
+                op_len = wex.count("C") + wex.count("D")
+                if op_len not in dts:
+                    dts[op_len] = {}
+                if wex not in dts[op_len]:
+                    dts[op_len][wex] = np.zeros((len(cidx),) * op_len, dtype=h1e.dtype)
+                dtx = dts[op_len][wex]
+            tensors = []
+            opidx = []
+            result = ""
+            mask = ""
+            f = term.factor * wf
+            for t in term.tensors:
+                if t.type == b.WickTensorTypes.Tensor:
+                    tensors.append(tx(tensor_d[t.name], t.indices))
+                    opidx.append("".join([i.name for i in t.indices]))
+                else:
+                    mask += (
+                        "I"
+                        if is_inactive(t.indices[0].types)
+                        else ("S" if is_single(t.indices[0].types) else "E")
+                    )
+                    result += t.indices[0].name
+            np_str = ",".join(opidx) + "->" + result
+            if 0 not in [x.size for x in tensors]:
+                ts = f * np.einsum(np_str, *tensors, optimize=True)
+                if len(wex) == 0:
+                    const_es += ts
+                else:
+                    dtx[ix(mask)] += ts.flatten()
+            if iprint:
+                xr = ("%20.15f" % const_es) if wex == "" else wex
+                print("%4d / %4d --" % (xiter, len(eq.terms)), xr, np_str, mask, f)
+            xiter += 1
+        assert sorted(dts.keys()) == [2, 4]
+        return dts[2], dts[4], const_es
+
+    @staticmethod
+    def make_sz(h1e, g2e, const_e, cidx, iprint=1):
+        import block2 as b
+        import numpy as np
+
+        if iprint:
+            print("-- Normal order (sz) using Wick's theorem")
+
+        try:
+            idx_map = b.MapWickIndexTypesSet()
+        except ImportError:
+            raise RuntimeError("block2 needs to be compiled with '-DUSE_IC=ON'!")
+
+        idx_map[b.WickIndexTypes.InactiveAlpha] = b.WickIndex.parse_set("pqrsijklmno")
+        idx_map[b.WickIndexTypes.InactiveBeta] = b.WickIndex.parse_set("PQRSIJKLMNO")
+        idx_map[b.WickIndexTypes.ExternalAlpha] = b.WickIndex.parse_set("pqrsabcdefg")
+        idx_map[b.WickIndexTypes.ExternalBeta] = b.WickIndex.parse_set("PQRSABCDEFG")
+        perm_map = b.MapPStrIntVectorWickPermutation()
+        perm_map[("vaa", 4)] = b.WickPermutation.qc_chem()
+        perm_map[("vbb", 4)] = b.WickPermutation.qc_chem()
+        perm_map[("vab", 4)] = b.WickPermutation.qc_chem()[1:]
+
+        P = lambda x: b.WickExpr.parse(x, idx_map, perm_map)
+        h1 = P("SUM <pq> ha[pq] C[p] D[q]\n + SUM <PQ> hb[PQ] C[P] D[Q]")
+        h2 = P(
+            """
+            0.5 SUM <prqs> vaa[prqs] C[p] C[q] D[s] D[r]
+            0.5 SUM <prQS> vab[prQS] C[p] C[Q] D[S] D[r]
+            0.5 SUM <PRqs> vab[qsPR] C[P] C[q] D[s] D[R]
+            0.5 SUM <PRQS> vbb[PRQS] C[P] C[Q] D[S] D[R]
+            """
+        )
+        eq = (h1 + h2).expand().simplify()
+
+        ha, hb = h1e
+        vaa, vab, vbb = g2e
+
+        dts = {}
+        const_es = const_e
+        tensor_d = {"ha": ha, "hb": hb, "vaa": vaa, "vab": vab, "vbb": vbb}
+
+        is_alpha = lambda x: (x & b.WickIndexTypes.Alpha) != b.WickIndexTypes.Nothing
+        is_inactive = (
+            lambda x: (x & b.WickIndexTypes.Inactive) != b.WickIndexTypes.Nothing
+        )
+
+        if np.array(cidx).ndim == 2:
+            cidxa, cidxb = cidx
+        else:
+            cidxa, cidxb = cidx, cidx
+
+        def ix(x):
+            p = {"i": cidxa, "e": ~cidxa, "I": cidxb, "E": ~cidxb}
+            r = np.outer(p[x[0]], p[x[1]])
+            for i in range(2, len(x)):
+                r = np.outer(r, p[x[i]])
+            return r.reshape((len(cidxa),) * len(x))
+
+        def tx(x, ix):
+            for ig, ii in enumerate(ix):
+                idx = (slice(None),) * ig
+                if is_alpha(ii.types):
+                    idx += (cidxa if is_inactive(ii.types) else ~cidxa,)
+                else:
+                    idx += (cidxb if is_inactive(ii.types) else ~cidxb,)
+                x = x[idx]
+            return x
+
+        xiter = 0
+        for term in eq.terms:
+            wex = ""
+            for t in term.tensors:
+                if t.type != b.WickTensorTypes.Tensor:
+                    if t.type == b.WickTensorTypes.CreationOperator:
+                        wex += "c" if is_alpha(t.indices[0].types) else "C"
+                    elif t.type == b.WickTensorTypes.DestroyOperator:
+                        wex += "d" if is_alpha(t.indices[0].types) else "D"
+            if len(wex) != 0 and wex not in dts:
+                op_len = sum([wex.count(cd) for cd in "cdCD"])
+                if op_len not in dts:
+                    dts[op_len] = {}
+                if wex not in dts[op_len]:
+                    dts[op_len][wex] = np.zeros((len(cidxa),) * op_len, dtype=ha.dtype)
+                dtx = dts[op_len][wex]
+            tensors = []
+            opidx = []
+            result = ""
+            mask = ""
+            f = term.factor
+            for t in term.tensors:
+                if t.type == b.WickTensorTypes.Tensor:
+                    tensors.append(tx(tensor_d[t.name], t.indices))
+                    opidx.append("".join([i.name for i in t.indices]))
+                else:
+                    if is_alpha(t.indices[0].types):
+                        mask += "i" if is_inactive(t.indices[0].types) else "e"
+                    else:
+                        mask += "I" if is_inactive(t.indices[0].types) else "E"
+                    result += t.indices[0].name
+            np_str = ",".join(opidx) + "->" + result
+            if 0 not in [x.size for x in tensors]:
+                ts = f * np.einsum(np_str, *tensors, optimize=True)
+                if len(wex) == 0:
+                    const_es += ts
+                else:
+                    dtx[ix(mask)] += ts.flatten()
+            if iprint:
+                xr = ("%20.15f" % const_es) if wex == "" else wex
+                print("%4d / %4d --" % (xiter, len(eq.terms)), xr, np_str, mask, f)
+            xiter += 1
+        assert sorted(dts.keys()) == [2, 4]
+        return dts[2], dts[4], const_es
+
+    @staticmethod
+    def make_sgf(h1e, g2e, const_e, cidx, iprint=1):
+        import block2 as b
+        import numpy as np
+
+        if iprint:
+            print("-- Normal order (sgf) using Wick's theorem")
+
+        try:
+            idx_map = b.MapWickIndexTypesSet()
+        except ImportError:
+            raise RuntimeError("block2 needs to be compiled with '-DUSE_IC=ON'!")
+
+        idx_map[b.WickIndexTypes.Inactive] = b.WickIndex.parse_set("pqrsijklmno")
+        idx_map[b.WickIndexTypes.External] = b.WickIndex.parse_set("pqrsabcdefg")
+        perm_map = b.MapPStrIntVectorWickPermutation()
+        perm_map[("v", 4)] = b.WickPermutation.qc_chem()
+
+        P = lambda x: b.WickExpr.parse(x, idx_map, perm_map)
+        h = P("SUM <pq> h[pq] C[p] D[q] + 0.5 SUM <pqrs> v[pqrs] C[p] C[r] D[s] D[q]")
+        eq = h.expand().simplify()
+
+        dts = {}
+        const_es = const_e
+        tensor_d = {"h": h1e, "v": g2e}
+
+        is_inactive = (
+            lambda x: (x & b.WickIndexTypes.Inactive) != b.WickIndexTypes.Nothing
+        )
+
+        def ix(x):
+            p = {"I": cidx, "E": ~cidx}
+            r = np.outer(p[x[0]], p[x[1]])
+            for i in range(2, len(x)):
+                r = np.outer(r, p[x[i]])
+            return r.reshape((len(cidx),) * len(x))
+
+        def tx(x, ix):
+            for ig, ii in enumerate(ix):
+                idx = (slice(None),) * ig
+                idx += (cidx if is_inactive(ii.types) else ~cidx,)
+                x = x[idx]
+            return x
+
+        xiter = 0
+        for term in eq.terms:
+            wex = ""
+            for t in term.tensors:
+                if t.type != b.WickTensorTypes.Tensor:
+                    if t.type == b.WickTensorTypes.CreationOperator:
+                        wex += "C"
+                    elif t.type == b.WickTensorTypes.DestroyOperator:
+                        wex += "D"
+            if len(wex) != 0 and wex not in dts:
+                op_len = wex.count("C") + wex.count("D")
+                if op_len not in dts:
+                    dts[op_len] = {}
+                if wex not in dts[op_len]:
+                    dts[op_len][wex] = np.zeros((len(cidx),) * op_len, dtype=h1e.dtype)
+                dtx = dts[op_len][wex]
+            tensors = []
+            opidx = []
+            result = ""
+            mask = ""
+            f = term.factor
+            for t in term.tensors:
+                if t.type == b.WickTensorTypes.Tensor:
+                    tensors.append(tx(tensor_d[t.name], t.indices))
+                    opidx.append("".join([i.name for i in t.indices]))
+                else:
+                    mask += "I" if is_inactive(t.indices[0].types) else "E"
+                    result += t.indices[0].name
+            np_str = ",".join(opidx) + "->" + result
+            if 0 not in [x.size for x in tensors]:
+                ts = f * np.einsum(np_str, *tensors, optimize=True)
+                if len(wex) == 0:
+                    const_es += ts
+                else:
+                    dtx[ix(mask)] += ts.flatten()
+            if iprint:
+                xr = ("%20.15f" % const_es) if wex == "" else wex
+                print("%4d / %4d --" % (xiter, len(eq.terms)), xr, np_str, mask, f)
+            xiter += 1
+        assert sorted(dts.keys()) == [2, 4]
+        return dts[2], dts[4], const_es
+
+
 class ExprBuilder:
-    def __init__(self, bw=Block2Wrapper()):
+    def __init__(self, bw=None):
+        if bw is None:
+            bw = Block2Wrapper()
         self.data = bw.bx.GeneralFCIDUMP()
         if SymmetryTypes.SU2 in bw.symm_type:
             self.data.elem_type = bw.b.ElemOpTypes.SU2
@@ -2316,9 +3491,9 @@ class ExprBuilder:
             self.data.data[i] = self.bw.VectorFL(d * np.array(ix))
         return self
 
-    def finalize(self, adjust_order=True, merge=True):
+    def finalize(self, adjust_order=True, merge=True, is_drt=False):
         if adjust_order:
-            self.data = self.data.adjust_order(merge=merge)
+            self.data = self.data.adjust_order(merge=merge, is_drt=is_drt)
         elif merge:
             self.data.merge_terms()
         return self.data
@@ -2467,9 +3642,47 @@ class OrbitalEntropy:
         return h_terms
 
     @staticmethod
-    def get_two_orb_rdm_eigvals(ld):
+    def get_one_orb_rdm_exprs():
+        exprs = {}
+        for iix, ix in enumerate([0, 5, 10, 15]):
+            for x in OrbitalEntropy.parse_expr(OrbitalEntropy.ops[ix]):
+                kk = (x[1:], (0,) * len(x[1:]))
+                if kk not in exprs:
+                    exprs[kk] = []
+                exprs[kk].append((iix, 1.0 if x[0] == "+" else -1.0))
+        return exprs, 4
+
+    @staticmethod
+    def get_two_orb_rdm_exprs():
+        exprs = {}
+        # Table 3. J. Chem. Theory Comput. 2013, 9, 2959-2973
+        ts = (
+            "1/1 1/6 2/5 -5/2 6/1 1/11 3/9 -9/3 11/1 6/6 1/16 2/15 -3/14 "
+            + "-4/13 -5/12 6/11 7/10 -8/9 9/8 10/7 11/6 12/5 -13/4 14/3 -15/2 16/1 "
+            + "11/11 6/16 8/14 -14/8 16/6 11/16 12/15 -15/12 16/11 16/16"
+        )
+        ts = [[int(v) for v in u.split("/")] for u in ts.split()]
+        for ii, (ix, iy) in enumerate(ts):
+            ff = -1 if ix < 0 else 1
+            for x in OrbitalEntropy.parse_expr(OrbitalEntropy.ops[abs(ix) - 1]):
+                for y in OrbitalEntropy.parse_expr(OrbitalEntropy.ops[iy - 1]):
+                    kk = (x[1:] + y[1:], (0,) * len(x[1:]) + (1,) * len(y[1:]))
+                    if kk not in exprs:
+                        exprs[kk] = []
+                    exprs[kk].append((ii, ff if x[0] == y[0] else -ff))
+        return exprs, len(ts)
+
+    @staticmethod
+    def get_two_orb_rdm_eigvals(ld, diag_only=False):
         import numpy as np
 
+        if diag_only and len(ld) == 36:
+            return ld[
+                np.array(
+                    [0, 1, 4, 5, 8, 9, 10, 15, 20, 25, 26, 27, 30, 31, 34, 35],
+                    dtype=int,
+                )
+            ]
         if len(ld) == 16:
             return ld
         elif len(ld) == 26:
@@ -2498,10 +3711,296 @@ class OrbitalEntropy:
                 ix += d
                 ip += d * d
             assert ix == len(lx) and ip == len(ld)
+        else:
+            lx = 0
         return lx
 
 
+class WickSpinAdaptation:
+    @staticmethod
+    def spin_tag_to_pattern(x):
+        """[1, 2, 2, 1] -> ((.+(.+.)0)1+.)0 ."""
+        if len(x) == 0:
+            return ""
+        elif len(x) == 2:
+            return "(.+.)0"
+        elif x[0] == x[-1]:
+            return "((.+%s)1+.)0" % WickSpinAdaptation.spin_tag_to_pattern(x[1:-1])
+        else:
+            for i in range(2, len(x) - 1, 2):
+                if len(set(x[:i]) & set(x[i:])) == 0:
+                    return "(%s+%s)0" % tuple(
+                        WickSpinAdaptation.spin_tag_to_pattern(xx)
+                        for xx in [x[:i], x[i:]]
+                    )
+            raise RuntimeError("Pattern not supported!")
+
+    @staticmethod
+    def adjust_spin_coupling(eq):
+        """correct up to 4-body terms."""
+        for term in eq.terms:
+            x = [t.name for t in term.tensors if t.name[0] in "CD"]
+            n = len(x)
+            ii = len(term.tensors) - n
+            tensors = term.tensors[ii:]
+            found = True
+            factor = 1
+            while found:
+                found = False
+                for i in range(n - 1):
+                    if x[i][0] != x[i + 1][0]:
+                        continue
+                    if (
+                        (i > 0 and x[i - 1][1:] == x[i + 1][1:])
+                        or (i < n - 2 and x[i + 2][1:] == x[i][1:])
+                        or (n >= 6 and i == n - 2 and x[0][1:] == x[i][1:])
+                        or (n >= 6 and i == 0 and x[-1][1:] == x[i + 1][1:])
+                        or (
+                            n >= 8
+                            and i <= n - 3
+                            and i >= 1
+                            and x[0][1:] == x[i + 1][1:]
+                            and x[-1][1:] == x[i][1:]
+                        )
+                        or (
+                            n >= 8
+                            and i == n - 4
+                            and x[0][1:] == x[i][1:]
+                            and x[i + 2][1:] == x[i + 3][1:]
+                        )
+                        or (
+                            n >= 8
+                            and i == 2
+                            and x[i - 2][1:] == x[i - 1][1:]
+                            and x[i + 1][1:] == x[-1][1:]
+                        )
+                        or (
+                            i <= n - 4
+                            and x[i][1:] == x[i + 3][1:]
+                            and x[i + 1][1:] != x[i + 2][1:]
+                        )
+                    ):
+                        factor = -factor
+                        tensors[i : i + 2] = tensors[i : i + 2][::-1]
+                        x[i : i + 2] = x[i : i + 2][::-1]
+                        found = True
+                        break
+                if found:
+                    continue
+                for i in range(n - 2):
+                    if x[i][0] != x[i + 1][0] or x[i + 1][0] != x[i + 2][0]:
+                        continue
+                    if (
+                        (i > 0 and x[i - 1][1:] == x[i + 2][1:])
+                        or (i < n - 3 and x[i + 3][1:] == x[i][1:])
+                        or (n >= 6 and i == n - 3 and x[0][1:] == x[i][1:])
+                    ):
+                        factor = -factor
+                        tensors[i : i + 3] = tensors[i : i + 3][::-1]
+                        x[i : i + 3] = x[i : i + 3][::-1]
+                        found = True
+                        break
+            term.factor *= factor
+            term.tensors[ii:] = tensors
+
+    @staticmethod
+    def get_eq_exprs(eq):
+        import block2 as b
+
+        cg = b.SU2CG()
+        r = []
+        for term in eq.terms:
+            tensors = [t for t in term.tensors if t.name[0] in "CD"]
+            cds = b.VectorUInt8([t.name[0] == "C" for t in tensors])
+            spin_pat = WickSpinAdaptation.spin_tag_to_pattern(
+                [int(t.name[1:]) for t in tensors]
+            )
+            indices = b.VectorUInt16(list(range(len(tensors))))
+            tensor = b.SpinPermRecoupling.make_tensor(spin_pat, indices, cds, cg).data[
+                0
+            ]
+            assert all(
+                [abs(x.factor - y.factor) < 1e-10 for x, y in zip(tensor, tensor[1:])]
+            )
+            r.append(
+                (
+                    1.0 / tensor[0].factor,
+                    spin_pat.replace(".", "%s") % tuple("DC"[cd] for cd in cds),
+                )
+            )
+        return r
+
+
 class SimilarityTransform:
+    @staticmethod
+    def make_su2(
+        h1e,
+        g2e,
+        ecore,
+        t1,
+        t2,
+        scratch,
+        n_elec,
+        t3=None,
+        ncore=0,
+        ncas=-1,
+        st_type=STTypes.H_HT_HT2T2,
+        iprint=1,
+    ):
+        import block2 as b
+        import numpy as np
+        import os
+
+        try:
+            idx_map = b.MapWickIndexTypesSet()
+        except ImportError:
+            raise RuntimeError("block2 needs to be compiled with '-DUSE_IC=ON'!")
+
+        idx_map[b.WickIndexTypes.Inactive] = b.WickIndex.parse_set("pqrsijklmno")
+        idx_map[b.WickIndexTypes.External] = b.WickIndex.parse_set("pqrsabcdefg")
+
+        perm_map = b.MapPStrIntVectorWickPermutation()
+        perm_map[("v", 4)] = b.WickPermutation.qc_chem()
+        perm_map[("t", 2)] = b.WickPermutation.non_symmetric()
+        perm_map[("tt", 4)] = b.WickPermutation.pair_symmetric(2, False)
+        perm_map[("ttt", 6)] = b.WickPermutation.pair_symmetric(3, False)
+
+        P = lambda x: b.WickExpr.parse(x, idx_map, perm_map)
+
+        h1 = P("SUM <pq> h[pq] E1[p,q]")
+        h2 = 0.5 * P("SUM <pqrs> v[prqs] E2[pq,rs]")
+        tt1 = P("SUM <ai> t[ia] E1[a,i]")
+        tt2 = 0.5 * P("SUM <abij> tt[ijab] E1[a,i] E1[b,j]")
+        tt3 = (1.0 / 6.0) * P("SUM <abcijk> ttt[ijkabc] E1[a,i] E1[b,j] E1[c,k]")
+
+        h = (h1 + h2).expand(-1, False, False).simplify()
+        tt = (tt1 + tt2).expand(-1, False, False).simplify()
+
+        eq = P("")
+        if STTypes.H in st_type:
+            eq = eq + h
+        if STTypes.HT in st_type:
+            eq = eq + (h ^ tt)
+        if STTypes.HT1T2 in st_type:
+            eq = eq + 0.5 * ((h ^ tt1) ^ tt1) + ((h ^ tt2) ^ tt1)
+        if STTypes.HT2T2 in st_type:
+            eq = eq + 0.5 * ((h ^ tt2) ^ tt2)
+        if STTypes.HT1T3 in st_type:
+            eq = eq + ((h ^ tt3) ^ tt1)
+        if STTypes.HT2T3 in st_type:
+            eq = eq + ((h ^ tt3) ^ tt2)
+
+        eq = eq.expand(6, False, False).simplify()
+        WickSpinAdaptation.adjust_spin_coupling(eq)
+        exprs = WickSpinAdaptation.get_eq_exprs(eq)
+
+        if not os.path.isdir(scratch):
+            os.makedirs(scratch)
+
+        nocc, nvir = t1.shape
+        cidx = np.array([True] * nocc + [False] * nvir)
+
+        tensor_d = {"h": h1e, "v": g2e, "t": t1, "tt": t2, "ttt": t3}
+
+        cas_mask = np.array([False] * len(cidx))
+        n_elec -= ncore * 2
+        if ncas == -1:
+            ncas = len(cidx) - ncore
+        cas_mask[ncore : ncore + ncas] = True
+
+        if iprint:
+            print(
+                "(%do, %de) -> CAS(%do, %de)"
+                % (len(cidx), n_elec + ncore * 2, ncas, n_elec)
+            )
+            print("ST Hamiltonian = ")
+            print("NTERMS = %5d" % len(eq.terms))
+            if iprint >= 3:
+                print(eq)
+
+        ccidx = cidx & cas_mask
+        vcidx = (~cidx) & cas_mask
+        icas = cas_mask[cidx]
+        vcas = cas_mask[~cidx]
+        xicas = cidx[cas_mask]
+        xvcas = (~cidx)[cas_mask]
+        h_terms = {}
+
+        def ix(x):
+            p = {"I": xicas, "E": xvcas}
+            r = np.outer(p[x[0]], p[x[1]])
+            for i in range(2, len(x)):
+                r = np.outer(r, p[x[i]])
+            return r.reshape((ncas,) * len(x))
+
+        is_inactive = (
+            lambda x: (x & b.WickIndexTypes.Inactive) != b.WickIndexTypes.Nothing
+        )
+
+        def tx(x, ix, rx, in_cas):
+            for ig, (ii, rr) in enumerate(zip(ix, rx)):
+                idx = (slice(None),) * ig
+                if in_cas:
+                    if rr:
+                        idx += (icas if is_inactive(ii.types) else vcas,)
+                elif rr:
+                    idx += (ccidx if is_inactive(ii.types) else vcidx,)
+                else:
+                    idx += (cidx if is_inactive(ii.types) else ~cidx,)
+                x = x[idx]
+            return x
+
+        e_terms = {}
+        for term, (wf, expr) in zip(eq.terms, exprs):
+            if expr not in e_terms:
+                e_terms[expr] = []
+            e_terms[expr].append((term, wf))
+
+        xiter = 0
+        for expr, terms in e_terms.items():
+            if expr != "":
+                h_terms[expr] = scratch + "/ST-DMRG." + expr + ".npy"
+                op_len = expr.count("C") + expr.count("D")
+                dtx = np.zeros((ncas,) * op_len, dtype=t1.dtype)
+            for term, wf in terms:
+                tensors = []
+                opidx = []
+                result = ""
+                mask = ""
+                f = term.factor * wf
+                for t in term.tensors:
+                    if t.type != b.WickTensorTypes.Tensor:
+                        if is_inactive(t.indices[0].types):
+                            mask += "I"
+                        else:
+                            mask += "E"
+                        result += t.indices[0].name
+                for t in term.tensors:
+                    if t.type == b.WickTensorTypes.Tensor:
+                        cmask = [it.name in result for it in t.indices]
+                        tensors.append(
+                            tx(tensor_d[t.name], t.indices, cmask, t.name[0] == "t")
+                        )
+                        opidx.append("".join([i.name for i in t.indices]))
+                np_str = ",".join(opidx) + "->" + result
+                ts = f * np.einsum(np_str, *tensors, optimize=True)
+                if len(expr) == 0:
+                    ecore += ts
+                else:
+                    dtx[ix(mask)] += ts.flatten()
+                if iprint >= 2:
+                    xr = ("%20.15f" % ecore) if expr == "" else expr
+                    print("%4d / %4d --" % (xiter, len(eq.terms)), xr, np_str, mask, f)
+                xiter += 1
+            if expr != "":
+                np.save(h_terms[expr], dtx)
+                dtx = None
+
+        if iprint:
+            print("ECORE = %20.15f" % ecore)
+
+        return h_terms, ecore, ncas, n_elec
+
     @staticmethod
     def make_sz(
         h1e,

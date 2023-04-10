@@ -157,8 +157,7 @@ template <typename S, typename FL> struct OperatorFunctions {
                     FL factor =
                         scale * (conj ? xconj<FL>(b->factor) : b->factor);
                     if (conj)
-                        factor *= cg->transpose_cg(bdq.twos(), bra.twos(),
-                                                   ket.twos());
+                        factor *= cg->transpose_cg(bdq, bra, ket);
                     if (seq->mode != SeqTypes::None &&
                         seq->mode != SeqTypes::Tasked)
                         seq->iadd((*a)[ia], (*b)[ib], factor, conj, a->factor);
@@ -349,12 +348,12 @@ template <typename S, typename FL> struct OperatorFunctions {
     }
     // b = < v | a | c >
     virtual void
-    tensor_partial_expectation(uint8_t conj,
-                               const shared_ptr<SparseMatrix<S, FL>> &a,
-                               const shared_ptr<SparseMatrix<S, FL>> &b,
-                               const shared_ptr<SparseMatrix<S, FL>> &c,
-                               const shared_ptr<SparseMatrix<S, FL>> &v, S opdq,
-                               FL scale = 1.0) const {
+    tensor_left_partial_expectation(uint8_t conj,
+                                    const shared_ptr<SparseMatrix<S, FL>> &a,
+                                    const shared_ptr<SparseMatrix<S, FL>> &b,
+                                    const shared_ptr<SparseMatrix<S, FL>> &c,
+                                    const shared_ptr<SparseMatrix<S, FL>> &v,
+                                    S opdq, FL scale = 1.0) const {
         assert(a->get_type() == SparseMatrixTypes::Normal &&
                b->get_type() == SparseMatrixTypes::Normal &&
                c->get_type() == SparseMatrixTypes::Normal &&
@@ -395,12 +394,74 @@ template <typename S, typename FL> struct OperatorFunctions {
                 seq->simple_perform();
             double factor = abcv[il].second;
             if (seq->mode != SeqTypes::None)
-                seq->rotate((*a)[ia], conj & 1, (*b)[ib], (conj & 2) >> 1,
-                            (*v)[iv], (*c)[ic], scale * (FP)factor);
+                seq->left_partial_rotate((*a)[ia], conj & 1, (*b)[ib],
+                                         (conj & 2) >> 1, (*v)[iv], (*c)[ic],
+                                         scale * (FP)factor);
             else
-                seq->cumulative_nflop += GMatrixFunctions<FL>::rotate(
-                    (*a)[ia], conj & 1, (*b)[ib], (conj & 2) >> 1, (*v)[iv],
-                    (*c)[ic], scale * (FP)factor);
+                seq->cumulative_nflop +=
+                    GMatrixFunctions<FL>::left_partial_rotate(
+                        (*a)[ia], conj & 1, (*b)[ib], (conj & 2) >> 1, (*v)[iv],
+                        (*c)[ic], scale * (FP)factor);
+        }
+        if (seq->mode == SeqTypes::Simple)
+            seq->simple_perform();
+    }
+    // a = < v | b | c >
+    virtual void
+    tensor_right_partial_expectation(uint8_t conj,
+                                     const shared_ptr<SparseMatrix<S, FL>> &a,
+                                     const shared_ptr<SparseMatrix<S, FL>> &b,
+                                     const shared_ptr<SparseMatrix<S, FL>> &c,
+                                     const shared_ptr<SparseMatrix<S, FL>> &v,
+                                     S opdq, FL scale = 1.0) const {
+        assert(a->get_type() == SparseMatrixTypes::Normal &&
+               b->get_type() == SparseMatrixTypes::Normal &&
+               c->get_type() == SparseMatrixTypes::Normal &&
+               v->get_type() == SparseMatrixTypes::Normal);
+        scale = scale * ((conj & 2) ? xconj<FL>(b->factor) : b->factor) *
+                xconj<FL>(v->factor) * c->factor;
+        if (conj & 1)
+            scale = xconj<FL>(scale);
+        assert(a->factor == (FP)1.0);
+        if (abs(scale) < TINY)
+            return;
+        S adq = a->info->delta_quantum, bdq = b->info->delta_quantum;
+        assert(c->info->cinfo != nullptr);
+        shared_ptr<typename SparseMatrixInfo<S>::ConnectionInfo> cinfo =
+            c->info->cinfo;
+        S abdq = opdq.combine((conj & 1) ? -adq : adq, (conj & 2) ? bdq : -bdq);
+        int ik = (int)(lower_bound(cinfo->quanta + cinfo->n[conj],
+                                   cinfo->quanta + cinfo->n[conj + 1], abdq) -
+                       cinfo->quanta);
+        assert(ik < cinfo->n[conj + 1]);
+        int ixa = cinfo->idx[ik];
+        int ixb = ik == cinfo->n[4] - 1 ? cinfo->nc : cinfo->idx[ik + 1];
+        vector<pair<array<int, 4>, double>> abcv(ixb - ixa);
+        for (int il = ixa; il < ixb; il++) {
+            int ia = cinfo->ia[il], ib = cinfo->ib[il], ic = cinfo->ic[il],
+                iv = (int)cinfo->stride[il];
+            double factor = cinfo->factor[il];
+            abcv[il - ixa] = make_pair(array<int, 4>{ia, ib, ic, iv}, factor);
+        }
+        simple_sort(abcv, [](const pair<array<int, 4>, double> &x) {
+            return x.first[0];
+        });
+        for (int il = 0; il < (int)abcv.size(); il++) {
+            int ia = abcv[il].first[0], ib = abcv[il].first[1],
+                ic = abcv[il].first[2], iv = abcv[il].first[3];
+            if (seq->mode == SeqTypes::Simple && il != 0 &&
+                ia <= abcv[il - 1].first[0])
+                seq->simple_perform();
+            double factor = abcv[il].second;
+            if (seq->mode != SeqTypes::None)
+                seq->right_partial_rotate((*b)[ib], (conj & 2) >> 1, (*a)[ia],
+                                          conj & 1, (*v)[iv], (*c)[ic],
+                                          scale * (FP)factor);
+            else
+                seq->cumulative_nflop +=
+                    GMatrixFunctions<FL>::right_partial_rotate(
+                        (*b)[ib], (conj & 2) >> 1, (*a)[ia], conj & 1, (*v)[iv],
+                        (*c)[ic], scale * (FP)factor);
         }
         if (seq->mode == SeqTypes::Simple)
             seq->simple_perform();
@@ -657,9 +718,8 @@ template <typename S, typename FL> struct OperatorFunctions {
         if (abs(scale) < TINY)
             return;
         bool cja = conj & 1, cjb = (conj & 2) >> 1;
-        int adq = a->info->delta_quantum.multiplicity() - 1,
-            bdq = b->info->delta_quantum.multiplicity() - 1,
-            cdq = c->info->delta_quantum.multiplicity() - 1;
+        S adq = a->info->delta_quantum, bdq = b->info->delta_quantum,
+          cdq = c->info->delta_quantum;
         S sadq = cja ? -a->info->delta_quantum : a->info->delta_quantum;
         S sbdq = cjb ? -b->info->delta_quantum : b->info->delta_quantum;
         for (int ic = 0; ic < c->info->n; ic++) {
@@ -677,20 +737,16 @@ template <typename S, typename FL> struct OperatorFunctions {
                     if (bl != S(S::invalid)) {
                         int ib = b->info->find_state(bl);
                         if (ib != -1) {
-                            int aqpj = aqprime.multiplicity() - 1,
-                                cqj = cq.multiplicity() - 1,
-                                cqpj = cqprime.multiplicity() - 1;
                             double factor =
-                                cg->racah(cqpj, bdq, cqj, adq, aqpj, cdq);
-                            factor *= sqrt((cdq + 1) * (aqpj + 1)) *
-                                      (((adq + bdq - cdq) & 2) ? -1 : 1);
+                                cg->racah(cqprime, bdq, cq, adq, aqprime, cdq);
+                            factor *= sqrt(cdq.multiplicity() *
+                                           aqprime.multiplicity()) *
+                                      cg->phase(adq, bdq, cdq);
                             if (cja)
-                                factor *= cg->transpose_cg(
-                                    (-sadq).twos(), cq.twos(), aqprime.twos());
+                                factor *= cg->transpose_cg(-sadq, cq, aqprime);
                             if (cjb)
-                                factor *= cg->transpose_cg((-sbdq).twos(),
-                                                           aqprime.twos(),
-                                                           cqprime.twos());
+                                factor *=
+                                    cg->transpose_cg(-sbdq, aqprime, cqprime);
                             GMatrixFunctions<FL>::multiply(
                                 (*a)[ia], cja, (*b)[ib], cjb, (*c)[ic],
                                 scale * (FP)factor, 1.0);

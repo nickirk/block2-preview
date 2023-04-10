@@ -23,9 +23,11 @@
 #include "../core/symmetry.hpp"
 #include "../dmrg/archived_mpo.hpp"
 #include "../dmrg/determinant.hpp"
+#include "../dmrg/dmrg_driver.hpp"
 #include "../dmrg/effective_functions.hpp"
 #include "../dmrg/effective_hamiltonian.hpp"
 #include "../dmrg/general_mpo.hpp"
+#include "../dmrg/general_npdm.hpp"
 #include "../dmrg/moving_environment.hpp"
 #include "../dmrg/mpo.hpp"
 #include "../dmrg/mpo_fusing.hpp"
@@ -62,6 +64,10 @@ extern template struct block2::DeterminantTRIE<block2::SU2, double>;
 extern template struct block2::DeterminantQC<block2::SU2, double>;
 extern template struct block2::DeterminantMPSInfo<block2::SU2, double>;
 
+// dmrg_driver.hpp
+extern template struct block2::DMRGDriver<block2::SZ, double>;
+extern template struct block2::DMRGDriver<block2::SU2, double>;
+
 // effective_functions.hpp
 extern template struct block2::EffectiveFunctions<block2::SZ, double>;
 extern template struct block2::EffectiveFunctions<block2::SU2, double>;
@@ -87,6 +93,10 @@ extern template struct block2::GeneralMPO<block2::SZ, double>;
 
 extern template struct block2::GeneralHamiltonian<block2::SU2, double>;
 extern template struct block2::GeneralMPO<block2::SU2, double>;
+
+// general_npdm.hpp
+extern template struct block2::GeneralNPDMMPO<block2::SZ, double>;
+extern template struct block2::GeneralNPDMMPO<block2::SU2, double>;
 
 // moving_environment.hpp
 extern template struct block2::MovingEnvironment<block2::SZ, double, double>;
@@ -261,6 +271,10 @@ extern template struct block2::DeterminantTRIE<block2::SU2K, double>;
 extern template struct block2::DeterminantQC<block2::SU2K, double>;
 extern template struct block2::DeterminantMPSInfo<block2::SU2K, double>;
 
+// dmrg_driver.hpp
+extern template struct block2::DMRGDriver<block2::SZK, double>;
+extern template struct block2::DMRGDriver<block2::SU2K, double>;
+
 // effective_functions.hpp
 extern template struct block2::EffectiveFunctions<block2::SZK, double>;
 extern template struct block2::EffectiveFunctions<block2::SU2K, double>;
@@ -284,6 +298,10 @@ extern template struct block2::GeneralMPO<block2::SZK, double>;
 
 extern template struct block2::GeneralHamiltonian<block2::SU2K, double>;
 extern template struct block2::GeneralMPO<block2::SU2K, double>;
+
+// general_npdm.hpp
+extern template struct block2::GeneralNPDMMPO<block2::SZK, double>;
+extern template struct block2::GeneralNPDMMPO<block2::SU2K, double>;
 
 // moving_environment.hpp
 extern template struct block2::MovingEnvironment<block2::SZK, double, double>;
@@ -455,6 +473,10 @@ extern template struct block2::ArchivedMPO<block2::SGB, double>;
 extern template struct block2::DeterminantTRIE<block2::SGF, double>;
 extern template struct block2::DeterminantTRIE<block2::SGB, double>;
 
+// dmrg_driver.hpp
+extern template struct block2::DMRGDriver<block2::SGF, double>;
+extern template struct block2::DMRGDriver<block2::SGB, double>;
+
 // effective_functions.hpp
 extern template struct block2::EffectiveFunctions<block2::SGF, double>;
 extern template struct block2::EffectiveFunctions<block2::SGB, double>;
@@ -478,6 +500,10 @@ extern template struct block2::GeneralMPO<block2::SGF, double>;
 
 extern template struct block2::GeneralHamiltonian<block2::SGB, double>;
 extern template struct block2::GeneralMPO<block2::SGB, double>;
+
+// general_npdm.hpp
+extern template struct block2::GeneralNPDMMPO<block2::SGF, double>;
+extern template struct block2::GeneralNPDMMPO<block2::SGB, double>;
 
 // moving_environment.hpp
 extern template struct block2::MovingEnvironment<block2::SGF, double, double>;
@@ -648,6 +674,10 @@ extern template struct block2::DeterminantTRIE<block2::SU2, complex<double>>;
 extern template struct block2::DeterminantQC<block2::SU2, complex<double>>;
 extern template struct block2::DeterminantMPSInfo<block2::SU2, complex<double>>;
 
+// dmrg_driver.hpp
+extern template struct block2::DMRGDriver<block2::SZ, complex<double>>;
+extern template struct block2::DMRGDriver<block2::SU2, complex<double>>;
+
 // effective_functions.hpp
 extern template struct block2::EffectiveFunctions<block2::SZ, complex<double>>;
 extern template struct block2::EffectiveFunctions<block2::SU2, complex<double>>;
@@ -676,6 +706,10 @@ extern template struct block2::GeneralMPO<block2::SZ, complex<double>>;
 
 extern template struct block2::GeneralHamiltonian<block2::SU2, complex<double>>;
 extern template struct block2::GeneralMPO<block2::SU2, complex<double>>;
+
+// general_npdm.hpp
+extern template struct block2::GeneralNPDMMPO<block2::SZ, complex<double>>;
+extern template struct block2::GeneralNPDMMPO<block2::SU2, complex<double>>;
 
 // moving_environment.hpp
 extern template struct block2::MovingEnvironment<block2::SZ, complex<double>,
@@ -847,6 +881,10 @@ extern template struct block2::DeterminantQC<block2::SU2K, complex<double>>;
 extern template struct block2::DeterminantMPSInfo<block2::SU2K,
                                                   complex<double>>;
 
+// dmrg_driver.hpp
+extern template struct block2::DMRGDriver<block2::SZK, complex<double>>;
+extern template struct block2::DMRGDriver<block2::SU2K, complex<double>>;
+
 // effective_functions.hpp
 extern template struct block2::EffectiveFunctions<block2::SZK, complex<double>>;
 extern template struct block2::EffectiveFunctions<block2::SU2K,
@@ -876,6 +914,10 @@ extern template struct block2::GeneralMPO<block2::SZK, complex<double>>;
 extern template struct block2::GeneralHamiltonian<block2::SU2K,
                                                   complex<double>>;
 extern template struct block2::GeneralMPO<block2::SU2K, complex<double>>;
+
+// general_npdm.hpp
+extern template struct block2::GeneralNPDMMPO<block2::SZK, complex<double>>;
+extern template struct block2::GeneralNPDMMPO<block2::SU2K, complex<double>>;
 
 // moving_environment.hpp
 extern template struct block2::MovingEnvironment<block2::SZK, complex<double>,
@@ -1050,6 +1092,10 @@ extern template struct block2::ArchivedMPO<block2::SGB, complex<double>>;
 extern template struct block2::DeterminantTRIE<block2::SGF, complex<double>>;
 extern template struct block2::DeterminantTRIE<block2::SGB, complex<double>>;
 
+// dmrg_driver.hpp
+extern template struct block2::DMRGDriver<block2::SGF, complex<double>>;
+extern template struct block2::DMRGDriver<block2::SGB, complex<double>>;
+
 // effective_functions.hpp
 extern template struct block2::EffectiveFunctions<block2::SGF, complex<double>>;
 extern template struct block2::EffectiveFunctions<block2::SGB, complex<double>>;
@@ -1077,6 +1123,10 @@ extern template struct block2::GeneralMPO<block2::SGF, complex<double>>;
 
 extern template struct block2::GeneralHamiltonian<block2::SGB, complex<double>>;
 extern template struct block2::GeneralMPO<block2::SGB, complex<double>>;
+
+// general_npdm.hpp
+extern template struct block2::GeneralNPDMMPO<block2::SGF, complex<double>>;
+extern template struct block2::GeneralNPDMMPO<block2::SGB, complex<double>>;
 
 // moving_environment.hpp
 extern template struct block2::MovingEnvironment<block2::SGF, complex<double>,
@@ -1249,6 +1299,10 @@ extern template struct block2::DeterminantTRIE<block2::SU2, float>;
 extern template struct block2::DeterminantQC<block2::SU2, float>;
 extern template struct block2::DeterminantMPSInfo<block2::SU2, float>;
 
+// dmrg_driver.hpp
+extern template struct block2::DMRGDriver<block2::SZ, float>;
+extern template struct block2::DMRGDriver<block2::SU2, float>;
+
 // effective_functions.hpp
 extern template struct block2::EffectiveFunctions<block2::SZ, float>;
 extern template struct block2::EffectiveFunctions<block2::SU2, float>;
@@ -1274,6 +1328,10 @@ extern template struct block2::GeneralMPO<block2::SZ, float>;
 
 extern template struct block2::GeneralHamiltonian<block2::SU2, float>;
 extern template struct block2::GeneralMPO<block2::SU2, float>;
+
+// general_npdm.hpp
+extern template struct block2::GeneralNPDMMPO<block2::SZ, float>;
+extern template struct block2::GeneralNPDMMPO<block2::SU2, float>;
 
 // moving_environment.hpp
 extern template struct block2::MovingEnvironment<block2::SZ, float, float>;
@@ -1426,6 +1484,10 @@ extern template struct block2::ArchivedMPO<block2::SGB, float>;
 extern template struct block2::DeterminantTRIE<block2::SGF, float>;
 extern template struct block2::DeterminantTRIE<block2::SGB, float>;
 
+// dmrg_driver.hpp
+extern template struct block2::DMRGDriver<block2::SGF, float>;
+extern template struct block2::DMRGDriver<block2::SGB, float>;
+
 // effective_functions.hpp
 extern template struct block2::EffectiveFunctions<block2::SGF, float>;
 extern template struct block2::EffectiveFunctions<block2::SGB, float>;
@@ -1449,6 +1511,10 @@ extern template struct block2::GeneralMPO<block2::SGF, float>;
 
 extern template struct block2::GeneralHamiltonian<block2::SGB, float>;
 extern template struct block2::GeneralMPO<block2::SGB, float>;
+
+// general_npdm.hpp
+extern template struct block2::GeneralNPDMMPO<block2::SGF, float>;
+extern template struct block2::GeneralNPDMMPO<block2::SGB, float>;
 
 // moving_environment.hpp
 extern template struct block2::MovingEnvironment<block2::SGF, float, float>;
@@ -1606,6 +1672,10 @@ extern template struct block2::DeterminantTRIE<block2::SU2, complex<float>>;
 extern template struct block2::DeterminantQC<block2::SU2, complex<float>>;
 extern template struct block2::DeterminantMPSInfo<block2::SU2, complex<float>>;
 
+// dmrg_driver.hpp
+extern template struct block2::DMRGDriver<block2::SZ, complex<float>>;
+extern template struct block2::DMRGDriver<block2::SU2, complex<float>>;
+
 // effective_functions.hpp
 extern template struct block2::EffectiveFunctions<block2::SZ, complex<float>>;
 extern template struct block2::EffectiveFunctions<block2::SU2, complex<float>>;
@@ -1633,6 +1703,10 @@ extern template struct block2::GeneralMPO<block2::SZ, complex<float>>;
 
 extern template struct block2::GeneralHamiltonian<block2::SU2, complex<float>>;
 extern template struct block2::GeneralMPO<block2::SU2, complex<float>>;
+
+// general_npdm.hpp
+extern template struct block2::GeneralNPDMMPO<block2::SZ, complex<float>>;
+extern template struct block2::GeneralNPDMMPO<block2::SU2, complex<float>>;
 
 // moving_environment.hpp
 extern template struct block2::MovingEnvironment<block2::SZ, complex<float>,
@@ -1804,6 +1878,10 @@ extern template struct block2::ArchivedMPO<block2::SGB, complex<float>>;
 extern template struct block2::DeterminantTRIE<block2::SGF, complex<float>>;
 extern template struct block2::DeterminantTRIE<block2::SGB, complex<float>>;
 
+// dmrg_driver.hpp
+extern template struct block2::DMRGDriver<block2::SGF, complex<float>>;
+extern template struct block2::DMRGDriver<block2::SGB, complex<float>>;
+
 // effective_functions.hpp
 extern template struct block2::EffectiveFunctions<block2::SGF, complex<float>>;
 extern template struct block2::EffectiveFunctions<block2::SGB, complex<float>>;
@@ -1829,6 +1907,10 @@ extern template struct block2::GeneralMPO<block2::SGF, complex<float>>;
 
 extern template struct block2::GeneralHamiltonian<block2::SGB, complex<float>>;
 extern template struct block2::GeneralMPO<block2::SGB, complex<float>>;
+
+// general_npdm.hpp
+extern template struct block2::GeneralNPDMMPO<block2::SGF, complex<float>>;
+extern template struct block2::GeneralNPDMMPO<block2::SGB, complex<float>>;
 
 // moving_environment.hpp
 extern template struct block2::MovingEnvironment<block2::SGF, complex<float>,

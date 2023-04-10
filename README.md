@@ -24,7 +24,7 @@ Main contributors:
 
 If you find this package useful for your scientific research, please cite the work as:
 
- - Zhai, H., Chan, G. K. Low communication high performance ab initio density matrix renormalization group algorithms. *The Journal of Chemical Physics* 2021, **154**, 224116, doi: [10.1063/5.0050902](https://doi.org/10.1063/5.0050902).
+ - Zhai, H., Chan, G. K. L. Low communication high performance ab initio density matrix renormalization group algorithms. *The Journal of Chemical Physics* 2021, **154**, 224116, doi: [10.1063/5.0050902](https://doi.org/10.1063/5.0050902).
 
 For the large site code, please cite
 
@@ -39,11 +39,11 @@ One can install ``block2`` using ``pip``:
 
       pip install block2
 
-* Hybrid openMP/MPI version (requiring openMPI 4.0.x and ``mpi4py`` based on the same openMPI library installed)
+* Hybrid openMP/MPI version (requiring openMPI 4.0.x)
 
       pip install block2-mpi
 
-* Binary format is prepared via ``pip`` for python 3.6, 3.7, 3.8, and 3.9 with macOS (no-MPI) or Linux (no-MPI/openMPI). If these binaries have some problems, you can use the ``--no-binary`` option of ``pip`` to force building from source (for example, ``pip install block2 --no-binary block2``).
+* Binary format is prepared via ``pip`` for python 3.7, 3.8, 3.9, and 3.10 with macOS (x86 and arm64, no-MPI) or Linux (no-MPI/openMPI). If these binaries have some problems, you can use the ``--no-binary`` option of ``pip`` to force building from source (for example, ``pip install block2 --no-binary block2``).
 
 * One should only install one of ``block2`` and ``block2-mpi``. ``block2-mpi`` covers all features in ``block2``, but its dependence on mpi library can sometimes be difficult to deal with. Some guidance for resolving environment problems can be found in issue [#7](https://github.com/block-hczhai/block2-preview/issues/7) and [here](https://block2.readthedocs.io/en/latest/user/installation.html#installation-with-anaconda).
 
@@ -54,7 +54,7 @@ One can install ``block2`` using ``pip``:
 
   where ``<version>`` can be some development version number like ``0.5.1rc14``.
 
-To run a DMRG calculation, please use the following command:
+To run a DMRG calculation using the command line interface, please use the following command:
 
     block2main dmrg.conf > dmrg.out
 
@@ -63,6 +63,8 @@ where ``dmrg.conf`` is the ``StackBlock`` style input file and ``dmrg.out`` cont
 For DMRGSCF calculation, please have a look at the [documentation](https://block2.readthedocs.io/en/latest/user/dmrg-scf.html).
 
 Documentation: https://block2.readthedocs.io/en/latest/
+
+Tutorial (python interface): https://block2.readthedocs.io/en/latest/tutorial/hubbard.html
 
 Source code: https://github.com/block-hczhai/block2-preview
 
@@ -93,8 +95,8 @@ Features
     * Time evolution
 * Low-Temperature DMRG (partition function approach)
 * Particle Density Matrix (1-site / 2-site)
-    * 1PDM / 2PDM
-    * Transition 1PDM
+    * 1PDM / 2PDM / 3PDM / 4PDM
+    * Transition 1PDM / 2PDM / 3PDM / 4PDM
     * Spin / charge correlation
 * Quantum Chemistry MPO
     * Normal-Complementary (NC) partition
@@ -106,15 +108,21 @@ Features
     * Block-sparse (outer) / dense (inner)
     * Block-sparse (outer) / elementwise-sparse (CSR, inner)
 * Fermionic MPS algebra (non-spin-adapted only)
-* Determinant/CSF overlap sampling
+* Determinant/CSF coefficients of MPS
 * Multi-level parallel DMRG
     * Parallelism over sites (2-site only)
-    * Parallelism over sum of MPOs (non-spin-adapted only)
+    * Parallelism over sum of MPOs (distributed)
     * Parallelism over operators (distributed/shared memory)
     * Parallelism over symmetry sectors (shared memory)
     * Parallelism within dense matrix multiplications (MKL)
-* DMRG-CASSCF (pyscf interface)
-    * Nuclear gradients and geometry optimization (pyscf interface, RHF reference only)
+* DMRG-CASSCF and contracted dynamic correlation
+    * DMRG-CASSCF (pyscf / openMOLCAS / forte interface)
+    * DMRG-CASSCF nuclear gradients and geometry optimization (pyscf interface, RHF reference only)
+    * DMRG-sc-NEVPT2 (pyscf interface, classical approach)
+    * DMRG-sc-MPS-NEVPT2 (pyscf interface, MPS compression approximation)
+    * DMRG-CASPT2 (openMOLCAS interface)
+    * DMRG-cu-CASPT2 (openMOLCAS interface)
+    * DMRG-MRDSRG (forte interface)
 * Stochastic perturbative DMRG
 * DMRG with Spin-Orbit Coupling (SOC)
     * 1-step approach (full complex one-MPO and hybrid real/complex two-MPO schemes)
@@ -145,13 +153,13 @@ References
 * Chan, G. K.-L. An algorithm for large scale density matrix renormalization group calculations. *The Journal of Chemical Physics* 2004, **120**, 3172–3178. https://doi.org/10.1063/1.1638734.
 * Chan, G. K.-L.; Keselman, A.; Nakatani, N.; Li, Z.; White, S. R. Matrix product operators, matrix product states, and ab initio density matrix renormalization group  algorithms. *The Journal of Chemical Physics* 2016, **145**, 014102. https://doi.org/10.1063/1.4955108.
 * Stoudenmire, E.; White, S. R. Real-space parallel density matrix renormalization group. *Physical Review B* 2013, **87**, 155137. https://doi.org/10.1103/PhysRevB.87.155137.
-* Zhai, H., Chan, G. K. Low communication high performance ab initio density matrix renormalization group algorithms. *The Journal of Chemical Physics* 2021, **154**, 224116. https://doi.org/10.1063/5.0050902.
+* Zhai, H., Chan, G. K. L. Low communication high performance ab initio density matrix renormalization group algorithms. *The Journal of Chemical Physics* 2021, **154**, 224116. https://doi.org/10.1063/5.0050902.
 
 ### Spin-Orbit Coupling
 
 * Sayfutyarova, E. R., Chan, G. K. L. A state interaction spin-orbit coupling density matrix renormalization group method. *The Journal of Chemical Physics* 2016, **144**, 234301. https://doi.org/10.1063/1.4953445.
 * Sayfutyarova, E. R., Chan, G. K. L. Electron paramagnetic resonance g-tensors from state interaction spin-orbit coupling density matrix renormalization group. *The Journal of Chemical Physics* 2018, **148**, 184103. https://doi.org/10.1063/1.5020079.
-* Zhai, H., Chan, G. K. A comparison between the one- and two-step spin-orbit coupling approaches based on the ab initio Density Matrix Renormalization Group. *The Journal of Chemical Physics* 2022, **157**, 164108. https://doi.org/10.1063/5.0107805
+* Zhai, H., Chan, G. K. A comparison between the one- and two-step spin-orbit coupling approaches based on the ab initio Density Matrix Renormalization Group. *The Journal of Chemical Physics* 2022, **157**, 164108. https://doi.org/10.1063/5.0107805.
 
 ### Green's Function
 
@@ -160,7 +168,11 @@ References
 ### Finite-Temperature DMRG
 
 * Feiguin, A. E., White, S. R. Finite-temperature density matrix renormalization using an enlarged Hilbert space. *Physical Review B* 2005, **72**, 220401. https://doi.org/10.1103/PhysRevB.72.220401.
+
+### Time-Dependent DMRG
+
 * Feiguin, A. E., White, S. R. Time-step targeting methods for real-time dynamics using the density matrix renormalization group. *Physical Review B* 2005, **72**, 020404. https://doi.org/10.1103/PhysRevB.72.020404.
+* Haegeman, J., Lubich, C., Oseledets, I., Vandereycken, B., Verstraete, F. Unifying time evolution and optimization with matrix product states. *Physical Review B* 2016, **94**, 165116. https://doi.org/10.1103/PhysRevB.94.165116.
 
 ### Linear Response
 
@@ -174,6 +186,18 @@ References
 ### Particle Density Matrix
 
 * Ghosh, D., Hachmann, J., Yanai, T., Chan, G. K. L. Orbital optimization in the density matrix renormalization group, with applications to polyenes and β-carotene. *The Journal of Chemical Physics* 2008, **128**, 144117. https://doi.org/10.1063/1.2883976.
+* Guo, S., Watson, M. A., Hu, W., Sun, Q., Chan, G. K. L. N-electron valence state perturbation theory based on a density matrix renormalization group reference function, with applications to the chromium dimer and a trimer model of poly (p-phenylenevinylene). *Journal of Chemical Theory and Computation* 2016, **12**, 1583-1591. https://doi.org/10.1021/acs.jctc.5b01225.
+
+### DMRG-SC-NEVPT2
+
+* Roemelt, M., Guo, S., Chan, G. K. L. A projected approximation to strongly contracted N-electron valence perturbation theory for DMRG wavefunctions. *The Journal of Chemical Physics* 2016, **144**, 204113. https://doi.org/10.1063/1.4950757.
+* Sokolov, A. Y., Guo, S., Ronca, E., Chan, G. K. L. Time-dependent N-electron valence perturbation theory with matrix product state reference wavefunctions for large active spaces and basis sets: Applications to the chromium dimer and all-trans polyenes. *The Journal of Chemical Physics* 2017, **146**, 244102. https://doi.org/10.1063/1.4986975.
+
+### DMRG-CASPT2
+
+* Kurashige, Y., Yanai, T. Second-order perturbation theory with a density matrix renormalization group self-consistent field reference function: Theory and application to the study of chromium dimer. *The Journal of Chemical Physics* 2011, **135**, 094104. https://doi.org/10.1063/1.3629454.
+* Wouters, S., Van Speybroeck, V., Van Neck, D. DMRG-CASPT2 study of the longitudinal static second hyperpolarizability of all-trans polyenes. *The Journal of Chemical Physics* 2016, **145**, 054120. https://doi.org/10.1063/1.4959817.
+* Nakatani, N., Guo, S. Density matrix renormalization group (DMRG) method as a common tool for large active-space CASSCF/CASPT2 calculations. *The Journal of Chemical Physics* 2017, **146**, 094102. https://doi.org/10.1063/1.4976644.
 
 ### Multi-Reference Correlation Theories
 
@@ -291,6 +315,10 @@ For `-DOMP_LIB=TBB`, nested openMP + TBB MKL is okay.
 
 `-DTBB=ON` can be combined with any `-DOMP_LIB=...`.
 
+### Complex mode
+
+For complex integrals / spin-orbit coupling (SOC), extra options ``-DUSE_COMPLEX=ON`` and ``-DUSE_SG=ON`` are required (and the compilation time will increase).
+
 ### Maximal bond dimension
 
 The default maximal allowed bond dimension per symmetry block is `65535`.
@@ -311,8 +339,8 @@ enables debug flags.
 
 ### Supported operating systems and compilers
 
-* Linux + gcc 9.2.0 + MKL 2019
-* MacOS 10.15 + Apple clang 12.0 + MKL 2021 (MKL 2019 required for `pip install`)
+* Linux + gcc 9.2.0 + MKL 2021.4
+* MacOS 10.15 + Apple clang 12.0 + MKL 2021 (MKL 2021.4 required for `pip install`)
 * MacOS 10.15 + icpc 2021.1 + MKL 2021
 * Windows 10 + Visual Studio 2019 (MSVC 14.28) + MKL 2021
 

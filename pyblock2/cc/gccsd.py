@@ -45,6 +45,8 @@ def init_parsers():
     perm_map[("t", 6)] = WickPermutation.pair_anti_symmetric(3)
     perm_map[("r", 2)] = WickPermutation.non_symmetric()
     perm_map[("r", 4)] = WickPermutation.pair_anti_symmetric(2)
+    perm_map[("l", 2)] = WickPermutation.non_symmetric()
+    perm_map[("l", 4)] = WickPermutation.pair_anti_symmetric(2)
 
     p = lambda x: WickExpr.parse(x, idx_map, perm_map)
     pt = lambda x: WickTensor.parse(x, idx_map, perm_map)
@@ -236,6 +238,36 @@ class WickGCCSD(gccsd.GCCSD):
         from pyblock2.cc.eom_gccsd import WickGEOMEE
         return WickGEOMEE(self).kernel(nroots, koopmans, guess, eris)
 
+    def solve_lambda(self, t1=None, t2=None, l1=None, l2=None, eris=None):
+        from pyblock2.cc.lambda_gccsd import wick_kernel
+        if t1 is None: t1 = self.t1
+        if t2 is None: t2 = self.t2
+        if eris is None: eris = self.ao2mo(self.mo_coeff)
+        self.converged_lambda, self.l1, self.l2 = \
+            wick_kernel(self, eris, t1, t2, l1, l2,
+                                max_cycle=self.max_cycle,
+                                tol=self.conv_tol_normt,
+                                verbose=self.verbose)
+        return self.l1, self.l2
+
+    def make_rdm1(self, t1=None, t2=None, l1=None, l2=None, **kwargs):
+        from pyblock2.cc.rdm_gccsd import wick_make_rdm1
+        if t1 is None: t1 = self.t1
+        if t2 is None: t2 = self.t2
+        if l1 is None: l1 = self.l1
+        if l2 is None: l2 = self.l2
+        if l1 is None: l1, l2 = self.solve_lambda(t1, t2)
+        return wick_make_rdm1(self, t1, t2, l1, l2, **kwargs)
+
+    def make_rdm2(self, t1=None, t2=None, l1=None, l2=None, **kwargs):
+        from pyblock2.cc.rdm_gccsd import wick_make_rdm2
+        if t1 is None: t1 = self.t1
+        if t2 is None: t2 = self.t2
+        if l1 is None: l1 = self.l1
+        if l2 is None: l2 = self.l2
+        if l1 is None: l1, l2 = self.solve_lambda(t1, t2)
+        return wick_make_rdm2(self, t1, t2, l1, l2, **kwargs)
+
 GCCSD = WickGCCSD
 
 if __name__ == "__main__":
@@ -250,6 +282,9 @@ if __name__ == "__main__":
     print('E-ip ( left) = ', ccsd.ipccsd(left=True)[0])
     print('E-ea (right) = ', ccsd.eaccsd()[0])
     print('E-ea ( left) = ', ccsd.eaccsd(left=True)[0])
+    l1, l2 = ccsd.solve_lambda()
+    dm1 = ccsd.make_rdm1()
+    dm2 = ccsd.make_rdm2()
     wccsd = WickGCCSD(mf).run()
     print('E(T) = ', wccsd.ccsd_t())
     print('E-ee = ', wccsd.eeccsd()[0])
@@ -257,3 +292,8 @@ if __name__ == "__main__":
     print('E-ip ( left) = ', wccsd.ipccsd(left=True)[0])
     print('E-ea (right) = ', wccsd.eaccsd()[0])
     print('E-ea ( left) = ', wccsd.eaccsd(left=True)[0])
+    wl1, wl2 = wccsd.solve_lambda()
+    print('lambda diff = ', np.linalg.norm(l1 - wl1), np.linalg.norm(l2 - wl2))
+    wdm1 = wccsd.make_rdm1()
+    wdm2 = wccsd.make_rdm2()
+    print('dm diff = ', np.linalg.norm(dm1 - wdm1), np.linalg.norm(dm2 - wdm2))

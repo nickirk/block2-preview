@@ -23,6 +23,7 @@
 #include "../core/expr.hpp"
 #include "../core/matrix.hpp"
 #include "../core/sparse_matrix.hpp"
+#include "../core/spin_permutation.hpp"
 #include "effective_functions.hpp"
 #include "moving_environment.hpp"
 #include "parallel_mps.hpp"
@@ -146,7 +147,8 @@ template <typename S, typename FL, typename FLS> struct DMRG {
             }
             os << " Error = " << scientific << setw(8) << setprecision(2)
                << r.error << " FLOPS = " << scientific << setw(8)
-               << setprecision(2) << (double)r.nflop / r.tdav
+               << setprecision(2)
+               << (r.tdav == 0.0 ? 0 : (double)r.nflop / r.tdav)
                << " Tdav = " << fixed << setprecision(2) << r.tdav;
             if (r.energies.size() != 1 && r.quanta.size() != 0) {
                 for (size_t i = 0; i < r.energies.size(); i++) {
@@ -545,9 +547,12 @@ template <typename S, typename FL, typename FLS> struct DMRG {
         }
         if (me->para_rule != nullptr)
             me->para_rule->comm->barrier();
-        return Iteration(
-            vector<FPLS>{get<0>(pdi) + xreal<FLLS>(me->mpo->const_e)}, error,
-            mmps, get<1>(pdi), get<2>(pdi), get<3>(pdi));
+        get<0>(pdi) = get<0>(pdi) + xreal<FLLS>(me->mpo->const_e);
+        if (me->para_rule != nullptr)
+            me->para_rule->comm->broadcast(&get<0>(pdi), 1,
+                                           me->para_rule->comm->root);
+        return Iteration(vector<FPLS>{get<0>(pdi)}, error, mmps, get<1>(pdi),
+                         get<2>(pdi), get<3>(pdi));
     }
     virtual tuple<FPLS, int, size_t, double>
     one_dot_eigs_and_perturb(const bool forward, const bool fuse_left,
@@ -840,9 +845,12 @@ template <typename S, typename FL, typename FLS> struct DMRG {
         }
         if (me->para_rule != nullptr)
             me->para_rule->comm->barrier();
-        return Iteration(
-            vector<FPLS>{get<0>(pdi) + xreal<FLLS>(me->mpo->const_e)}, error,
-            mmps, get<1>(pdi), get<2>(pdi), get<3>(pdi));
+        get<0>(pdi) = get<0>(pdi) + xreal<FLLS>(me->mpo->const_e);
+        if (me->para_rule != nullptr)
+            me->para_rule->comm->broadcast(&get<0>(pdi), 1,
+                                           me->para_rule->comm->root);
+        return Iteration(vector<FPLS>{get<0>(pdi)}, error, mmps, get<1>(pdi),
+                         get<2>(pdi), get<3>(pdi));
     }
     virtual tuple<FPLS, int, size_t, double>
     two_dot_eigs_and_perturb(const bool forward, const int i,
@@ -1269,6 +1277,10 @@ template <typename S, typename FL, typename FLS> struct DMRG {
             me->para_rule->comm->barrier();
         for (auto &x : get<0>(pdi))
             x += xreal<FLLS>(me->mpo->const_e);
+        if (me->para_rule != nullptr)
+            me->para_rule->comm->broadcast(get<0>(pdi).data(),
+                                           get<0>(pdi).size(),
+                                           me->para_rule->comm->root);
         Iteration r = Iteration(get<0>(pdi), error, mmps, get<1>(pdi),
                                 get<2>(pdi), get<3>(pdi));
         r.quanta = mps_quanta;
@@ -1607,6 +1619,10 @@ template <typename S, typename FL, typename FLS> struct DMRG {
             me->para_rule->comm->barrier();
         for (auto &x : get<0>(pdi))
             x += xreal<FLLS>(me->mpo->const_e);
+        if (me->para_rule != nullptr)
+            me->para_rule->comm->broadcast(get<0>(pdi).data(),
+                                           get<0>(pdi).size(),
+                                           me->para_rule->comm->root);
         Iteration r = Iteration(get<0>(pdi), error, mmps, get<1>(pdi),
                                 get<2>(pdi), get<3>(pdi));
         r.quanta = mps_quanta;
@@ -1725,7 +1741,9 @@ template <typename S, typename FL, typename FLS> struct DMRG {
             if (me->ket->canonical_form[i] == 'M' ||
                 me->ket->canonical_form[i + 1] == 'M' ||
                 me->ket->canonical_form[i] == 'J' ||
-                me->ket->canonical_form[i] == 'T')
+                me->ket->canonical_form[i] == 'T' ||
+                me->ket->canonical_form[i + 1] == 'J' ||
+                me->ket->canonical_form[i + 1] == 'T')
                 it = update_multi_two_dot(i, forward, bond_dim, noise,
                                           davidson_conv_thrd);
             else
@@ -2258,6 +2276,8 @@ template <typename S, typename FL, typename FLS> struct DMRG {
         mps_quanta.clear();
         bool converged;
         FPS energy_difference;
+        if (iprint >= 1)
+            cout << endl;
         for (int iw = 0; iw < n_sweeps; iw++) {
             isweep = iw;
             if (iprint >= 1)
@@ -2315,9 +2335,9 @@ template <typename S, typename FL, typename FLS> struct DMRG {
                         shared_ptr<ParallelCommunicator<S>> comm =
                             para_mps->rule->comm;
                         double tt[2] = {comm->tcomm, comm->tidle};
-                        comm->reduce_sum(&tt[0], 2, comm->root);
-                        comm->reduce_sum((uint64_t *)&sweep_cumulative_nflop, 1,
-                                         comm->root);
+                        comm->reduce_sum_optional(&tt[0], 2, comm->root);
+                        comm->reduce_sum_optional(
+                            (uint64_t *)&sweep_cumulative_nflop, 1, comm->root);
                         cout << " | GTcomm = " << tt[0] / comm->size
                              << " | GTidle = " << tt[1] / comm->size << endl;
                     }
@@ -2335,7 +2355,7 @@ template <typename S, typename FL, typename FLS> struct DMRG {
                         shared_ptr<ParallelCommunicator<S>> comm =
                             me->para_rule->comm;
                         double tt[3] = {comm->tcomm, comm->tidle, comm->twait};
-                        comm->reduce_sum(&tt[0], 3, comm->root);
+                        comm->reduce_sum_optional(&tt[0], 3, comm->root);
                         sout << " | Tcomm = " << tt[0] / comm->size
                              << " | Tidle = " << tt[1] / comm->size
                              << " | Twait = " << tt[2] / comm->size;
@@ -2566,7 +2586,8 @@ template <typename S, typename FL, typename FLS> struct Linear {
             }
             os << " Error = " << scientific << setw(8) << setprecision(2)
                << r.error << " FLOPS = " << scientific << setw(8)
-               << setprecision(2) << (double)r.nflop / r.tmult
+               << setprecision(2)
+               << (r.tmult == 0.0 ? 0 : (double)r.nflop / r.tmult)
                << " Tmult = " << fixed << setprecision(2) << r.tmult;
             return os;
         }
@@ -4143,6 +4164,8 @@ template <typename S, typename FL, typename FLS> struct Linear {
         discarded_weights.clear();
         bool converged;
         FLS target_difference;
+        if (iprint >= 1)
+            cout << endl;
         for (int iw = 0; iw < n_sweeps; iw++) {
             if (iprint >= 1) {
                 cout << "Sweep = " << setw(4) << iw
@@ -4213,7 +4236,7 @@ template <typename S, typename FL, typename FLS> struct Linear {
                         double tt[3] = {lme->para_rule->comm->tcomm,
                                         lme->para_rule->comm->tidle,
                                         lme->para_rule->comm->twait};
-                        lme->para_rule->comm->reduce_sum(
+                        lme->para_rule->comm->reduce_sum_optional(
                             &tt[0], 3, lme->para_rule->comm->root);
                         tt[0] /= lme->para_rule->comm->size;
                         tt[1] /= lme->para_rule->comm->size;
@@ -4351,6 +4374,7 @@ struct Expect {
     vector<FPS> wfn_spectra;
     size_t sweep_cumulative_nflop = 0;
     size_t sweep_max_eff_ham_size = 0;
+    pair<size_t, size_t> max_move_env_mem;
     double tex = 0, teff = 0, tmve = 0, tblk = 0;
     Timer _t, _t2;
     Expect(const shared_ptr<MovingEnvironment<S, FL, FLS>> &me,
@@ -4358,6 +4382,10 @@ struct Expect {
         : me(me), bra_bond_dim(bra_bond_dim), ket_bond_dim(ket_bond_dim),
           forward(false) {
         expectations.resize(me->n_sites - me->dot + 1);
+        // for final step of serial execution of parallel npdm
+        if (expectations.size() != 0 && me->mpo->npdm_scheme != nullptr)
+            expectations[0].push_back(
+                make_pair(make_shared<OpCounter<S>>(0), (FLX)0.0));
         partition_weights = PartitionWeights<FLX>::get_partition_weights();
     }
     Expect(const shared_ptr<MovingEnvironment<S, FL, FLS>> &me,
@@ -4380,15 +4408,21 @@ struct Expect {
               ket_error(ket_error), nflop(nflop), tmult(tmult) {}
         friend ostream &operator<<(ostream &os, const Iteration &r) {
             os << fixed << setprecision(8);
-            if (r.expectations.size() == 1)
-                os << " " << setw(14) << r.expectations[0].second;
+            if (r.expectations.size() == 1 &&
+                r.expectations[0].first->get_type() == OpTypes::Counter)
+                os << "Nterms = " << setw(12)
+                   << dynamic_pointer_cast<OpCounter<S>>(
+                          r.expectations[0].first)
+                          ->data;
+            else if (r.expectations.size() == 1)
+                os << setw(14) << r.expectations[0].second;
             else
-                os << " Nterms = " << setw(6) << r.expectations.size();
+                os << "Nterms = " << setw(12) << r.expectations.size();
             os << " Error = " << setw(15) << setprecision(12) << r.bra_error
                << "/" << setw(15) << setprecision(12) << r.ket_error
                << " FLOPS = " << scientific << setw(8) << setprecision(2)
-               << (double)r.nflop / r.tmult << " Tmult = " << fixed
-               << setprecision(2) << r.tmult;
+               << (r.tmult == 0.0 ? 0 : (double)r.nflop / r.tmult)
+               << " Tmult = " << fixed << setprecision(2) << r.tmult;
             return os;
         }
     };
@@ -4412,6 +4446,8 @@ struct Expect {
             }
             mps->load_tensor(i);
         }
+        if (me->para_rule != nullptr)
+            me->para_rule->comm->barrier();
         tuple<vector<pair<shared_ptr<OpExpr<S>>, FL>>, size_t, double> pdi;
         FPS bra_error = 0.0, ket_error = 0.0;
         if (me->para_rule == nullptr || me->para_rule->is_root()) {
@@ -4506,11 +4542,13 @@ struct Expect {
                         }
                     }
                 }
+                me->para_rule->comm->barrier();
             }
+            pair<size_t, size_t> pbr;
             if (forward) {
                 for (auto &mps : mpss)
                     mps->tensors[i] = make_shared<SparseMatrix<S, FLS>>();
-                me->move_to(i + 1, true);
+                pbr = me->move_to(i + 1, true);
                 _t.get_time();
                 shared_ptr<EffectiveHamiltonian<S, FL>> k_eff =
                     me->eff_ham(FuseTypes::NoFuseL, forward, false,
@@ -4534,7 +4572,7 @@ struct Expect {
             } else {
                 for (auto &mps : mpss)
                     mps->tensors[i] = make_shared<SparseMatrix<S, FLS>>();
-                me->move_to(i - 1, true);
+                pbr = me->move_to(i - 1, true);
                 _t.get_time();
                 shared_ptr<EffectiveHamiltonian<S, FL>> k_eff =
                     me->eff_ham(FuseTypes::NoFuseR, forward, false,
@@ -4556,6 +4594,10 @@ struct Expect {
                         mps->unload_tensor(i - 1);
                     }
             }
+            if (max_move_env_mem.first + max_move_env_mem.second <=
+                pbr.first + pbr.second)
+                max_move_env_mem.first = pbr.first,
+                max_move_env_mem.second = pbr.second;
         } else {
             if (me->para_rule == nullptr || me->para_rule->is_root()) {
                 for (int ip = 0; ip < (int)mpss.size(); ip++) {
@@ -4685,8 +4727,8 @@ struct Expect {
         teff += _t.get_time();
         sweep_max_eff_ham_size =
             max(sweep_max_eff_ham_size, h_eff->op->get_total_memory());
-        auto pdi =
-            h_eff->expect(me->mpo->const_e, algo_type, ex_type, me->para_rule);
+        auto pdi = h_eff->expect(me->mpo->const_e, algo_type, ex_type,
+                                 me->para_rule, fuse_left);
         tex += _t.get_time();
         h_eff->deallocate();
         FPS bra_error = 0.0, ket_error = 0.0;
@@ -5327,7 +5369,11 @@ struct Expect {
     Iteration blocking(int i, bool forward, bool propagate,
                        ubond_t bra_bond_dim, ubond_t ket_bond_dim) {
         _t2.get_time();
-        me->move_to(i);
+        pair<size_t, size_t> pbr = me->move_to(i);
+        if (max_move_env_mem.first + max_move_env_mem.second <=
+            pbr.first + pbr.second)
+            max_move_env_mem.first = pbr.first,
+            max_move_env_mem.second = pbr.second;
         tmve += _t2.get_time();
         assert(me->dot == 1 || me->dot == 2);
         Iteration it(vector<pair<shared_ptr<OpExpr<S>>, FLX>>(), 0, 0, 0, 0);
@@ -5335,7 +5381,9 @@ struct Expect {
             if (me->ket->canonical_form[i] == 'M' ||
                 me->ket->canonical_form[i + 1] == 'M' ||
                 me->ket->canonical_form[i] == 'J' ||
-                me->ket->canonical_form[i] == 'T')
+                me->ket->canonical_form[i] == 'T' ||
+                me->ket->canonical_form[i + 1] == 'J' ||
+                me->ket->canonical_form[i + 1] == 'T')
                 it = update_multi_two_dot(i, forward, propagate, bra_bond_dim,
                                           ket_bond_dim);
             else
@@ -5366,6 +5414,7 @@ struct Expect {
     }
     void sweep(bool forward, ubond_t bra_bond_dim, ubond_t ket_bond_dim) {
         teff = tex = tblk = tmve = 0;
+        max_move_env_mem.first = max_move_env_mem.second = 0;
         frame_<FPS>()->twrite = frame_<FPS>()->tread = frame_<FPS>()->tasync =
             0;
         frame_<FPS>()->fpwrite = frame_<FPS>()->fpread = 0;
@@ -5414,11 +5463,13 @@ struct Expect {
     FLX solve(bool propagate, bool forward = true) {
         Timer start, current;
         start.get_time();
+        current.get_time();
         for (auto &x : expectations)
             x.clear();
         if (propagate) {
             if (iprint >= 1) {
-                cout << "Expectation | Direction = " << setw(8)
+                cout << endl
+                     << "Expectation | Direction = " << setw(8)
                      << (forward ? "forward" : "backward")
                      << " | BRA bond dimension = " << setw(4)
                      << (uint32_t)bra_bond_dim
@@ -5447,8 +5498,8 @@ struct Expect {
                     double tt[3] = {me->para_rule->comm->tcomm,
                                     me->para_rule->comm->tidle,
                                     me->para_rule->comm->twait};
-                    me->para_rule->comm->reduce_sum(&tt[0], 3,
-                                                    me->para_rule->comm->root);
+                    me->para_rule->comm->reduce_sum_optional(
+                        &tt[0], 3, me->para_rule->comm->root);
                     tt[0] /= me->para_rule->comm->size;
                     tt[1] /= me->para_rule->comm->size;
                     tt[2] /= me->para_rule->comm->size;
@@ -5466,6 +5517,12 @@ struct Expect {
                      << " (" << (imain * 100 / (imain + iseco)) << "%)";
                 cout << " | Hmem = "
                      << Parsing::to_size_string(sweep_max_eff_ham_size *
+                                                sizeof(FL));
+                cout << " | MaxBmem = "
+                     << Parsing::to_size_string(max_move_env_mem.first *
+                                                sizeof(FL));
+                cout << " | MaxRmem = "
+                     << Parsing::to_size_string(max_move_env_mem.second *
                                                 sizeof(FL));
                 cout << endl;
                 cout << " | Tread = " << frame_<FPS>()->tread
@@ -5487,7 +5544,8 @@ struct Expect {
                          << " | Tdiag = " << me->tdiag
                          << " | Tinfo = " << me->tinfo << endl;
                 cout << " | Teff = " << teff << " | Texpt = " << tex
-                     << " | Tblk = " << tblk << " | Tmve = " << tmve << endl;
+                     << " | Tblk = " << tblk << " | Tmve = " << tmve << endl
+                     << endl;
             }
             this->forward = forward;
             if (expectations.size() != 0 && expectations[0].size() == 1)
@@ -5504,31 +5562,33 @@ struct Expect {
             return r.expectations[0].second;
         }
     }
-    GMatrix<FLX> get_1pdm_spatial(uint16_t n_physical_sites = 0U) {
+    GMatrix<FLX> get_1pdm_spatial(uint16_t n_physical_sites = 0U) const {
         if (n_physical_sites == 0U)
             n_physical_sites = me->n_sites;
         return PDM1MPOQC<S, FLX>::get_matrix_spatial(expectations,
                                                      n_physical_sites);
     }
-    GMatrix<FLX> get_1pdm(uint16_t n_physical_sites = 0U) {
+    GMatrix<FLX> get_1pdm(uint16_t n_physical_sites = 0U) const {
         if (n_physical_sites == 0U)
             n_physical_sites = me->n_sites;
         return PDM1MPOQC<S, FLX>::get_matrix(expectations, n_physical_sites);
     }
-    shared_ptr<GTensor<FLX>> get_2pdm_spatial(uint16_t n_physical_sites = 0U) {
+    shared_ptr<GTensor<FLX>>
+    get_2pdm_spatial(uint16_t n_physical_sites = 0U) const {
         if (n_physical_sites == 0U)
             n_physical_sites = me->n_sites;
         return PDM2MPOQC<S, FLX>::get_matrix_spatial(expectations,
                                                      n_physical_sites);
     }
-    shared_ptr<GTensor<FLX>> get_2pdm(uint16_t n_physical_sites = 0U) {
+    shared_ptr<GTensor<FLX>> get_2pdm(uint16_t n_physical_sites = 0U) const {
         if (n_physical_sites == 0U)
             n_physical_sites = me->n_sites;
         return PDM2MPOQC<S, FLX>::get_matrix(expectations, n_physical_sites);
     }
     // number of particle correlation
     // s == 0: pure spin; s == 1: mixed spin
-    GMatrix<FLX> get_1npc_spatial(uint8_t s, uint16_t n_physical_sites = 0U) {
+    GMatrix<FLX> get_1npc_spatial(uint8_t s,
+                                  uint16_t n_physical_sites = 0U) const {
         if (n_physical_sites == 0U)
             n_physical_sites = me->n_sites;
         return NPC1MPOQC<S, FLX>::get_matrix_spatial(s, expectations,
@@ -5536,10 +5596,117 @@ struct Expect {
     }
     // number of particle correlation
     // s == 0: pure spin; s == 1: mixed spin
-    GMatrix<FLX> get_1npc(uint8_t s, uint16_t n_physical_sites = 0U) {
+    GMatrix<FLX> get_1npc(uint8_t s, uint16_t n_physical_sites = 0U) const {
         if (n_physical_sites == 0U)
             n_physical_sites = me->n_sites;
         return NPC1MPOQC<S, FLX>::get_matrix(s, expectations, n_physical_sites);
+    }
+    vector<shared_ptr<GTensor<FLX>>> get_npdm(uint16_t n_physical_sites = 0U) {
+        if (me->mpo->npdm_scheme == nullptr)
+            throw runtime_error(
+                "Expect::get_npdm only works with general NPDM MPO.");
+        shared_ptr<NPDMScheme> scheme = me->mpo->npdm_scheme;
+        vector<shared_ptr<GTensor<FLX>>> r(scheme->perms.size());
+        if (n_physical_sites == 0U)
+            n_physical_sites = me->n_sites;
+        size_t total_mem = 0;
+        for (int i = 0; i < (int)scheme->perms.size(); i++) {
+            int n_op = (int)scheme->perms[i]->index_patterns[0].size();
+            if (scheme->perms[i]->mask.size() != 0) {
+                n_op = 1;
+                for (int k = 1; k < scheme->perms[i]->mask.size(); k++)
+                    n_op += scheme->perms[i]->mask[k] !=
+                            scheme->perms[i]->mask[k - 1];
+            }
+            vector<MKL_INT> shape(n_op, n_physical_sites);
+            r[i] = make_shared<GTensor<FLX>>(shape);
+            r[i]->clear();
+            total_mem += r[i]->size();
+        }
+        bool symbol_free = false;
+        // for zero-dot backward, expectations[0] may be empty
+        for (auto &v : expectations)
+            if (v.size() == 1 && v[0].first->get_type() == OpTypes::Counter)
+                symbol_free = true;
+        if (iprint) {
+            cout << "NPDM Sorting | Nsites = " << setw(5) << me->n_sites
+                 << " | Nmaxops = " << setw(2) << scheme->n_max_ops
+                 << " | DotSite = "
+                 << (me->dot == 2 ? 2 : (zero_dot_algo ? 0 : 1));
+            cout << " | SymbolFree = " << (symbol_free ? "T" : "F");
+            if (symbol_free) {
+                cout << " | Compressed = "
+                     << ((algo_type & ExpectationAlgorithmTypes::Compressed) ||
+                                 (algo_type &
+                                  ExpectationAlgorithmTypes::Automatic)
+                             ? "T"
+                             : "F");
+                cout << " | LowMem = "
+                     << ((algo_type & ExpectationAlgorithmTypes::LowMem) ? "T"
+                                                                         : "F");
+            } else {
+                cout << " | Fast = "
+                     << ((algo_type & ExpectationAlgorithmTypes::Fast) ||
+                                 (algo_type &
+                                  ExpectationAlgorithmTypes::Automatic)
+                             ? "T"
+                             : "F");
+            }
+            cout << " | Mem = "
+                 << Parsing::to_size_string(total_mem * sizeof(FLX)) << endl;
+        }
+        Timer current;
+        current.get_time();
+        double tsite, tsite_total = 0;
+        // for zero-dot backward, last expectations may contain data
+        // for one-dot, last expectations may contain repeated data
+        int ixed = symbol_free || !(zero_dot_algo && me->dot == 1)
+                       ? me->n_sites - 1
+                       : me->n_sites;
+        for (int ix = 0; ix < ixed; ix++) {
+            vector<pair<shared_ptr<OpExpr<S>>, FLX>> &v = expectations[ix];
+            if (iprint >= 2) {
+                cout << " Site = " << setw(5) << ix << " .. ";
+                cout.flush();
+            }
+            if (symbol_free)
+                me->mpo->tf->template npdm_sort<FLX>(
+                    scheme, r, me->get_npdm_fragment_filename(ix), me->n_sites,
+                    ix,
+                    (algo_type & ExpectationAlgorithmTypes::Compressed) ||
+                        (algo_type & ExpectationAlgorithmTypes::Automatic));
+            else
+                for (size_t i = 0; i < (size_t)v.size(); i++) {
+                    shared_ptr<OpElement<S, FL>> op =
+                        dynamic_pointer_cast<OpElement<S, FL>>(v[i].first);
+                    assert(op->name == OpNames::XPDM);
+                    int ii = op->site_index.ss();
+                    size_t kk = ((size_t)op->site_index[0] << 36) |
+                                ((size_t)op->site_index[1] << 24) |
+                                ((size_t)op->site_index[2] << 12) |
+                                ((size_t)op->site_index[3]);
+                    (*r[ii]->data)[kk] += v[i].second;
+                }
+            if (iprint >= 2) {
+                tsite = current.get_time();
+                cout << " T = " << fixed << setprecision(3) << tsite;
+                cout << endl;
+                tsite_total += tsite;
+            }
+        }
+        if (!symbol_free && me->para_rule != nullptr) {
+            current.get_time();
+            for (int i = 0; i < (int)scheme->perms.size(); i++)
+                me->para_rule->comm->allreduce_sum(r[i]->data->data(),
+                                                   r[i]->data->size());
+            tsite = current.get_time();
+            cout << "Tcomm = " << fixed << setprecision(3) << tsite << " ";
+        }
+        if (iprint)
+            cout << "Ttotal = " << fixed << setprecision(3) << setw(10)
+                 << tsite_total << endl
+                 << endl;
+        return r;
     }
 };
 

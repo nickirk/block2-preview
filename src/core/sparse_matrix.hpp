@@ -119,15 +119,12 @@ struct SparseMatrixInfo<
                         double factor =
                             sqrt(cdq.multiplicity() * opdq.multiplicity() *
                                  aq.multiplicity() * bq.multiplicity()) *
-                            cg->wigner_9j(aq.twos(), bq.twos(), cdq.twos(),
-                                          adq.twos(), bdq.twos(), opdq.twos(),
-                                          aq.twos(), bq.twos(), cdq.twos());
+                            cg->wigner_9j(aq, bq, cdq, adq, bdq, opdq, aq, bq,
+                                          cdq);
                         if (cja)
-                            factor *= cg->transpose_cg(adq.twos(), aq.twos(),
-                                                       aq.twos());
+                            factor *= cg->transpose_cg(adq, aq, aq);
                         if (cjb)
-                            factor *= cg->transpose_cg(bdq.twos(), bq.twos(),
-                                                       bq.twos());
+                            factor *= cg->transpose_cg(bdq, bq, bq);
                         factor *=
                             (binfo->is_fermion && aq.is_fermion()) ? -1 : 1;
                         if (abs(factor) >= TINY) {
@@ -222,23 +219,19 @@ struct SparseMatrixInfo<
                                              opdq.multiplicity() *
                                              lq.multiplicity() *
                                              rq.multiplicity()) *
-                                        cg->wigner_9j(
-                                            lqprime.twos(), rqprime.twos(),
-                                            cdq.twos(), adq.twos(), bdq.twos(),
-                                            opdq.twos(), lq.twos(), rq.twos(),
-                                            vdq.twos());
+                                        cg->wigner_9j(lqprime, rqprime, cdq,
+                                                      adq, bdq, opdq, lq, rq,
+                                                      vdq);
                                     factor *= (binfo->is_fermion &&
                                                lqprime.is_fermion())
                                                   ? -1
                                                   : 1;
                                     if (cja)
-                                        factor *= cg->transpose_cg(
-                                            adq.twos(), lq.twos(),
-                                            lqprime.twos());
+                                        factor *=
+                                            cg->transpose_cg(adq, lq, lqprime);
                                     if (cjb)
-                                        factor *= cg->transpose_cg(
-                                            bdq.twos(), rq.twos(),
-                                            rqprime.twos());
+                                        factor *=
+                                            cg->transpose_cg(bdq, rq, rqprime);
                                     if (abs(factor) >= TINY) {
                                         if (pv.size() <= ip)
                                             pv.push_back(
@@ -368,23 +361,19 @@ struct SparseMatrixInfo<
                                              cdq.multiplicity() *
                                              aq.multiplicity() *
                                              bq.multiplicity()) *
-                                        cg->wigner_9j(
-                                            aqprime.twos(), bqprime.twos(),
-                                            cqprime.twos(), adq.twos(),
-                                            bdq.twos(), cdq.twos(), aq.twos(),
-                                            bq.twos(), cq.twos());
+                                        cg->wigner_9j(aqprime, bqprime, cqprime,
+                                                      adq, bdq, cdq, aq, bq,
+                                                      cq);
                                     factor *= (binfo->is_fermion &&
                                                aqprime.is_fermion())
                                                   ? -1
                                                   : 1;
                                     if (cja)
-                                        factor *= cg->transpose_cg(
-                                            adq.twos(), aq.twos(),
-                                            aqprime.twos());
+                                        factor *=
+                                            cg->transpose_cg(adq, aq, aqprime);
                                     if (cjb)
-                                        factor *= cg->transpose_cg(
-                                            bdq.twos(), bq.twos(),
-                                            bqprime.twos());
+                                        factor *=
+                                            cg->transpose_cg(bdq, bq, bqprime);
                                     if (abs(factor) >= TINY) {
                                         via.push_back(ia);
                                         vib.push_back(ib);
@@ -1090,7 +1079,7 @@ template <typename S, typename FL> struct SparseMatrix {
             linfo->n_states_bra[i] = l[i]->shape[0];
             linfo->n_states_ket[i] = l[i]->shape[1];
             // this is only necessary for compatibility with StackBlock
-            if (l[i]->data.size() == 1 && xreal<FL>(l[i]->data[0]) < 0) {
+            if (l[i]->data->size() == 1 && xreal<FL>((*l[i]->data)[0]) < 0) {
                 GMatrixFunctions<FL>::iscale(l[i]->ref(), -1);
                 GMatrixFunctions<FP>::iscale(s[i]->ref(), -1);
             }
@@ -1108,7 +1097,7 @@ template <typename S, typename FL> struct SparseMatrix {
             assert(s[k]->shape[0] == r[i]->shape[0]);
             for (int j = 0; j < r[i]->shape[0]; j++)
                 GMatrixFunctions<FL>::iscale(GMatrix<FL>(&mm(j, 0), 1, mm.n),
-                                             s[k]->data[j], 1);
+                                             (*s[k]->data)[j], 1);
         }
         for (int i = 0; i < linfo->n; i++)
             GMatrixFunctions<FL>::copy((*left)[qs[i]], l[i]->ref());
@@ -1147,7 +1136,7 @@ template <typename S, typename FL> struct SparseMatrix {
             rinfo->n_states_bra[i] = r[i]->shape[0];
             rinfo->n_states_ket[i] = r[i]->shape[1];
             // this is only necessary for compatibility with StackBlock
-            if (r[i]->data.size() == 1 && xreal<FL>(r[i]->data[0]) < 0) {
+            if (r[i]->data->size() == 1 && xreal<FL>((*r[i]->data)[0]) < 0) {
                 GMatrixFunctions<FL>::iscale(r[i]->ref(), -1);
                 GMatrixFunctions<FP>::iscale(s[i]->ref(), -1);
             }
@@ -1166,7 +1155,7 @@ template <typename S, typename FL> struct SparseMatrix {
             assert(s[k]->shape[0] == l[i]->shape[1]);
             for (int j = 0; j < l[i]->shape[1]; j++)
                 GMatrixFunctions<FL>::iscale(GMatrix<FL>(&mm(0, j), mm.m, 1),
-                                             s[k]->data[j], mm.n);
+                                             (*s[k]->data)[j], mm.n);
         }
         for (int i = 0; i < rinfo->n; i++)
             GMatrixFunctions<FL>::copy((*right)[qs[i]], r[i]->ref());
@@ -1196,11 +1185,11 @@ template <typename S, typename FL> struct SparseMatrix {
             GMatrix<FL> ll = l[k]->ref(), rr = r[i]->ref();
             GMatrix<FP> ss = s[k]->ref();
             for (MKL_INT j = 0; j < r[i]->shape[0]; j++)
-                if (abs(s[k]->data[j]) > svd_cutoff)
+                if (abs((*s[k]->data)[j]) > svd_cutoff)
                     GMatrixFunctions<FL>::multiply(
                         GMatrix<FL>(&ll(0, j), ll.m, ll.n), false,
                         GMatrix<FL>(&rr(j, 0), 1, rr.n), false, mm,
-                        1.0 / s[k]->data[j], 1.0);
+                        1.0 / (*s[k]->data)[j], 1.0);
         }
         return pinv;
     }
@@ -1268,13 +1257,13 @@ template <typename S, typename FL> struct SparseMatrix {
         threading->activate_normal();
         vector<FP> svals;
         for (int ir = 0; ir < nr; ir++)
-            svals.insert(svals.end(), s[ir]->data.begin(), s[ir]->data.end());
+            svals.insert(svals.end(), s[ir]->data->begin(), s[ir]->data->end());
         if (bond_dim != 0 && svals.size() > bond_dim) {
             sort(svals.begin(), svals.end());
             FP small = svals[svals.size() - bond_dim - 1];
             for (int ir = 0; ir < nr; ir++)
-                for (MKL_INT j = 1; j < (MKL_INT)s[ir]->data.size(); j++)
-                    if (s[ir]->data[j] <= small) {
+                for (MKL_INT j = 1; j < (MKL_INT)s[ir]->data->size(); j++)
+                    if ((*s[ir]->data)[j] <= small) {
                         merged_l[ir]->truncate_right(j);
                         s[ir]->truncate(j);
                         r[ir]->truncate_left(j);
@@ -1289,7 +1278,7 @@ template <typename S, typename FL> struct SparseMatrix {
             shared_ptr<GTensor<FL>> tsl =
                 make_shared<GTensor<FL>>(vector<MKL_INT>{
                     (MKL_INT)info->n_states_bra[i], merged_l[ir]->shape[1]});
-            memcpy(tsl->data.data(), merged_l[ir]->data.data() + it[ir],
+            memcpy(tsl->data->data(), merged_l[ir]->data->data() + it[ir],
                    tsl->size() * sizeof(FL));
             it[ir] += (MKL_INT)tsl->size();
             l.push_back(tsl);
@@ -1364,13 +1353,13 @@ template <typename S, typename FL> struct SparseMatrix {
         threading->activate_normal();
         vector<FP> svals;
         for (int il = 0; il < nl; il++)
-            svals.insert(svals.end(), s[il]->data.begin(), s[il]->data.end());
+            svals.insert(svals.end(), s[il]->data->begin(), s[il]->data->end());
         if (bond_dim != 0 && svals.size() > bond_dim) {
             sort(svals.begin(), svals.end());
             FP small = svals[svals.size() - bond_dim - 1];
             for (int il = 0; il < nl; il++)
-                for (MKL_INT j = 1; j < (MKL_INT)s[il]->data.size(); j++)
-                    if (s[il]->data[j] <= small) {
+                for (MKL_INT j = 1; j < (MKL_INT)s[il]->data->size(); j++)
+                    if ((*s[il]->data)[j] <= small) {
                         l[il]->truncate_right(j);
                         s[il]->truncate(j);
                         merged_r[il]->truncate_left(j);
@@ -1387,8 +1376,8 @@ template <typename S, typename FL> struct SparseMatrix {
             MKL_INT inr = info->n_states_ket[i], ixr = merged_r[il]->shape[1];
             MKL_INT inl = merged_r[il]->shape[0];
             for (MKL_INT k = 0; k < inl; k++)
-                memcpy(tsr->data.data() + k * inr,
-                       merged_r[il]->data.data() + (it[il] + k * ixr),
+                memcpy(tsr->data->data() + k * inr,
+                       merged_r[il]->data->data() + (it[il] + k * ixr),
                        inr * sizeof(FL));
             it[il] += inr;
             r.push_back(tsr);
@@ -1781,12 +1770,11 @@ template <typename S, typename FL> struct SparseMatrix {
                     for (pair<MKL_INT, int> &t :
                          mp.at(new_fused_cinfo.quanta[bb].data).at(ik)) {
                         S ket_mr = old_fused.quanta[t.second];
-                        FP factor = (FP)(cg->racah(bra_l.twos(), bra_m.twos(),
-                                                   info->delta_quantum.twos(),
-                                                   ket.twos(), bra.twos(),
-                                                   ket_mr.twos()) *
-                                         sqrt(1.0 * bra.multiplicity() *
-                                              ket_mr.multiplicity()));
+                        FP factor =
+                            (FP)(cg->racah(bra_l, bra_m, info->delta_quantum,
+                                           ket, bra, ket_mr) *
+                                 sqrt(1.0 * bra.multiplicity() *
+                                      ket_mr.multiplicity()));
                         for (ubond_t j = 0; j < l.n_states[ibba]; j++)
                             GMatrixFunctions<FL>::iadd(
                                 GMatrix<FL>(ptr + j * lp, lp, 1),
@@ -1854,12 +1842,11 @@ template <typename S, typename FL> struct SparseMatrix {
                     for (tuple<MKL_INT, MKL_INT, int> &t :
                          mp.at(new_fused_cinfo.quanta[kk].data).at(ib)) {
                         S bra_lm = old_fused.quanta[get<2>(t)];
-                        FP factor = (FP)(cg->racah(ket_r.twos(), ket_m.twos(),
-                                                   info->delta_quantum.twos(),
-                                                   bra.twos(), ket.twos(),
-                                                   bra_lm.twos()) *
-                                         sqrt(1.0 * ket.multiplicity() *
-                                              bra_lm.multiplicity()));
+                        FP factor =
+                            (FP)(cg->racah(ket_r, ket_m, info->delta_quantum,
+                                           bra, ket, bra_lm) *
+                                 sqrt(1.0 * ket.multiplicity() *
+                                      bra_lm.multiplicity()));
                         for (ubond_t j = 0; j < l.n_states[ib]; j++) {
                             GMatrixFunctions<FL>::iadd(
                                 GMatrix<FL>(ptr + j * lp, (MKL_INT)get<1>(t),
@@ -2157,8 +2144,8 @@ template <typename S, typename FL> struct SparseMatrixGroup {
                                     merged_l[ir]->shape[1]});
                 if (abs(xscales[ii]) > 1E-12)
                     GMatrixFunctions<FL>::iadd(
-                        GMatrix<FL>(tsl->data.data(), (MKL_INT)tsl->size(), 1),
-                        GMatrix<FL>(merged_l[ir]->data.data() + it[ir],
+                        GMatrix<FL>(tsl->data->data(), (MKL_INT)tsl->size(), 1),
+                        GMatrix<FL>(merged_l[ir]->data->data() + it[ir],
                                     (MKL_INT)tsl->size(), 1),
                         1.0 / xscales[ii]);
                 it[ir] += tsl->size();
@@ -2275,9 +2262,9 @@ template <typename S, typename FL> struct SparseMatrixGroup {
                 if (abs(xscales[ii]) > 1E-12) {
                     for (MKL_INT k = 0; k < inl; k++)
                         GMatrixFunctions<FL>::iadd(
-                            GMatrix<FL>(tsr->data.data() + k * inr,
+                            GMatrix<FL>(tsr->data->data() + k * inr,
                                         (MKL_INT)inr, 1),
-                            GMatrix<FL>(merged_r[il]->data.data() +
+                            GMatrix<FL>(merged_r[il]->data->data() +
                                             (it[il] + k * ixr),
                                         (MKL_INT)inr, 1),
                             1.0 / xscales[ii]);

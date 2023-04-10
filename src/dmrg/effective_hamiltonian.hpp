@@ -47,7 +47,24 @@ enum FuseTypes : uint8_t {
     FuseLR = 3
 };
 
-enum struct ExpectationAlgorithmTypes : uint8_t { Automatic, Normal, Fast };
+enum struct ExpectationAlgorithmTypes : uint16_t {
+    Automatic = 1,
+    Normal = 2,
+    Fast = 4,
+    SymbolFree = 8,
+    Compressed = 16,
+    LowMem = 32
+};
+
+inline ExpectationAlgorithmTypes operator|(ExpectationAlgorithmTypes a,
+                                           ExpectationAlgorithmTypes b) {
+    return ExpectationAlgorithmTypes((uint16_t)a | (uint16_t)b);
+}
+
+inline uint16_t operator&(ExpectationAlgorithmTypes a,
+                          ExpectationAlgorithmTypes b) {
+    return (uint16_t)a & (uint16_t)b;
+}
 
 enum struct ExpectationTypes : uint8_t { Real, Complex };
 
@@ -86,6 +103,9 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
     bool compute_diag;
     vector<shared_ptr<typename SparseMatrixInfo<S>::ConnectionInfo>> wfn_infos;
     vector<S> operator_quanta;
+    shared_ptr<NPDMScheme> npdm_scheme = nullptr;
+    string npdm_fragment_filename = "";
+    int npdm_n_sites = 0, npdm_center = -1, npdm_parallel_center = -1;
     EffectiveHamiltonian(
         const vector<pair<S, shared_ptr<SparseMatrixInfo<S>>>> &left_op_infos,
         const vector<pair<S, shared_ptr<SparseMatrixInfo<S>>>> &right_op_infos,
@@ -94,10 +114,12 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
         const shared_ptr<SparseMatrix<S, FL>> &ket,
         const shared_ptr<OpElement<S, FL>> &hop,
         const shared_ptr<SymbolicColumnVector<S>> &hop_mat, S hop_left_vacuum,
-        const shared_ptr<TensorFunctions<S, FL>> &ptf, bool compute_diag = true)
+        const shared_ptr<TensorFunctions<S, FL>> &ptf, bool compute_diag = true,
+        const shared_ptr<NPDMScheme> &npdm_scheme = nullptr)
         : left_op_infos(left_op_infos), right_op_infos(right_op_infos), op(op),
           bra(bra), ket(ket), tf(ptf->copy()), hop_mat(hop_mat),
-          hop_left_vacuum(hop_left_vacuum), compute_diag(compute_diag) {
+          hop_left_vacuum(hop_left_vacuum), compute_diag(compute_diag),
+          npdm_scheme(npdm_scheme) {
         // wavefunction
         if (compute_diag) {
             // for non-hermitian hamiltonian, bra and ket may share the same
@@ -116,6 +138,26 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
         vector<vector<pair<uint8_t, S>>> msubsl =
             Partition<S, FL>::get_uniq_sub_labels(op->mat, hop_mat, msl,
                                                   hop_left_vacuum);
+        // symbol-free npdm case
+        if (npdm_scheme != nullptr && op->mat->data.size() == 1 &&
+            dynamic_pointer_cast<OpElement<S, FL>>(op->dops[0])->name ==
+                OpNames::XPDM &&
+            dynamic_pointer_cast<OpElement<S, FL>>(op->dops[0])->site_index ==
+                SiteIndex()) {
+            for (int i = 0; i < (int)msl.size(); i++) {
+                set<S> set_subsl;
+                for (auto &pl : left_op_infos)
+                    for (auto &pr : right_op_infos) {
+                        S p = msl[i].combine(pl.first, -pr.first);
+                        if (p != S(S::invalid))
+                            msubsl[i].push_back(make_pair(0, p));
+                    }
+                sort(msubsl[i].begin(), msubsl[i].end());
+                msubsl[i].resize(
+                    distance(msubsl[i].begin(),
+                             unique(msubsl[i].begin(), msubsl[i].end())));
+            }
+        }
         // tensor product diagonal
         if (compute_diag) {
             shared_ptr<typename SparseMatrixInfo<S>::ConnectionInfo> diag_info =
@@ -405,7 +447,8 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
         post_precompute();
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         return make_tuple((typename const_fl_type<FP>::FL)eners[0], ndav,
                           (size_t)nflop, t.get_time());
@@ -464,7 +507,8 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
         post_precompute();
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         return make_tuple(r, make_pair(nmult, niter), (size_t)nflop,
                           t.get_time());
@@ -533,24 +577,35 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
         tf->opf->seq->mode = mode;
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         return make_tuple(norm, 1, (size_t)nflop, t.get_time());
     }
     // X = < [bra] | [H_eff] | [ket] >
     // expectations, nflop, tmult
+    // fuse_left: 1 : must fuse left, 0: must fuse right, -1: arbitrary
     tuple<vector<pair<shared_ptr<OpExpr<S>>, FL>>, size_t, double>
     expect(typename const_fl_type<FL>::FL const_e,
            ExpectationAlgorithmTypes algo_type, ExpectationTypes ex_type,
-           const shared_ptr<ParallelRule<S>> &para_rule = nullptr) {
+           const shared_ptr<ParallelRule<S>> &para_rule = nullptr,
+           uint8_t fuse_left = -1) {
         shared_ptr<OpExpr<S>> expr = nullptr;
         if ((FL)const_e != (FL)0.0 && op->mat->data.size() > 0)
             expr = add_const_term(const_e, para_rule);
         assert(ex_type == ExpectationTypes::Real || is_complex<FL>::value);
-        if (algo_type == ExpectationAlgorithmTypes::Automatic)
+        if (algo_type == ExpectationAlgorithmTypes::Automatic) {
             algo_type = op->mat->data.size() > 1
                             ? ExpectationAlgorithmTypes::Fast
                             : ExpectationAlgorithmTypes::Normal;
+            if (npdm_scheme != nullptr && op->mat->data.size() == 1 &&
+                dynamic_pointer_cast<OpElement<S, FL>>(op->dops[0])->name ==
+                    OpNames::XPDM &&
+                dynamic_pointer_cast<OpElement<S, FL>>(op->dops[0])
+                        ->site_index == SiteIndex())
+                algo_type = ExpectationAlgorithmTypes::SymbolFree |
+                            ExpectationAlgorithmTypes::Compressed;
+        }
         SeqTypes mode = tf->opf->seq->mode;
         tf->opf->seq->mode = tf->opf->seq->mode & SeqTypes::Simple
                                  ? SeqTypes::Simple
@@ -572,10 +627,11 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
             expectations.reserve(op->mat->data.size());
             vector<FL> results;
             vector<size_t> results_idx;
-            results.reserve(op->mat->data.size());
-            results_idx.reserve(op->mat->data.size());
-            if (para_rule != nullptr)
+            if (para_rule != nullptr && npdm_scheme == nullptr) {
+                results.reserve(op->mat->data.size());
+                results_idx.reserve(op->mat->data.size());
                 para_rule->set_partition(ParallelRulePartitionTypes::Middle);
+            }
             for (size_t i = 0; i < op->mat->data.size(); i++) {
                 using OESF = OpElement<S, FL>;
                 assert(dynamic_pointer_cast<OESF>(op->dops[i])->name !=
@@ -588,11 +644,11 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
                     expectations.push_back(make_pair(op->dops[i], 0.0));
                 else {
                     FL r = 0.0;
-                    if (para_rule == nullptr ||
+                    if (para_rule == nullptr || npdm_scheme != nullptr ||
                         !dynamic_pointer_cast<ParallelRule<S, FL>>(para_rule)
                              ->number(op->dops[i])) {
                         btmp.clear();
-                        (*this)(ktmp, btmp, (int)i, 1.0, true);
+                        (*this)(ktmp, btmp, (int)i, 1.0, npdm_scheme == nullptr);
                         r = GMatrixFunctions<FL>::complex_dot(rtmp, btmp);
                     } else {
                         if (dynamic_pointer_cast<ParallelRule<S, FL>>(para_rule)
@@ -614,15 +670,29 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
                 for (size_t i = 0; i < results.size(); i++)
                     expectations[results_idx[i]].second = results[i];
             }
-        } else
+        } else if (algo_type == ExpectationAlgorithmTypes::Fast) {
             expectations = tf->tensor_product_expectation(
-                op->dops, op->mat->data, op->lopt, op->ropt, ket, bra);
+                op->dops, op->mat->data, op->lopt, op->ropt, ket, bra,
+                npdm_scheme == nullptr);
+        } else if (algo_type & ExpectationAlgorithmTypes::SymbolFree) {
+            if (npdm_scheme == nullptr)
+                throw runtime_error("ExpectationAlgorithmTypes::SymbolFree "
+                                    "only works with general NPDM MPO.");
+            expectations = tf->tensor_product_npdm_fragment(
+                npdm_scheme, opdq, npdm_fragment_filename, npdm_n_sites,
+                npdm_center, npdm_parallel_center, op->lopt, op->ropt, ket, bra,
+                fuse_left == -1 ? op->lopt->ops.size() < op->ropt->ops.size()
+                                : fuse_left,
+                algo_type & ExpectationAlgorithmTypes::Compressed,
+                algo_type & ExpectationAlgorithmTypes::LowMem);
+        }
         if ((FL)const_e != (FL)0.0 && op->mat->data.size() > 0)
             op->mat->data[0] = expr;
         tf->opf->seq->mode = mode;
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         return make_tuple(expectations, (size_t)nflop, t.get_time());
     }
@@ -664,7 +734,8 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
         post_precompute();
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         return make_pair(r, make_tuple(1, (size_t)nflop, t.get_time()));
     }
@@ -736,7 +807,8 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
         post_precompute();
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         return make_pair(rr, make_tuple(energy, norm, 3 + eval_energy,
                                         (size_t)nflop, t.get_time()));
@@ -807,7 +879,8 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
         post_precompute();
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         return make_pair(r, make_tuple(energy, norm, 4 + eval_energy,
                                        (size_t)nflop, t.get_time()));
@@ -849,7 +922,8 @@ struct EffectiveHamiltonian<S, FL, MPS<S, FL>> {
         post_precompute();
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         return make_tuple(energy, norm, nexpo + 1, (size_t)nflop, t.get_time());
     }
@@ -956,7 +1030,8 @@ template <typename S, typename FL> struct LinearEffectiveHamiltonian {
             h_effs[ih]->post_precompute();
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         aa.deallocate();
         return make_tuple((typename const_fl_type<FP>::FL)eners[0], ndav,
@@ -1040,6 +1115,9 @@ struct EffectiveHamiltonian<S, FL, MultiMPS<S, FL>> {
         S, shared_ptr<typename SparseMatrixInfo<S>::ConnectionInfo>>>
         wfn_infos;
     vector<S> operator_quanta;
+    shared_ptr<NPDMScheme> npdm_scheme = nullptr;
+    string npdm_fragment_filename = "";
+    int npdm_n_sites = 0, npdm_center = -1, npdm_parallel_center = -1;
     EffectiveHamiltonian(
         const vector<pair<S, shared_ptr<SparseMatrixInfo<S>>>> &left_op_infos,
         const vector<pair<S, shared_ptr<SparseMatrixInfo<S>>>> &right_op_infos,
@@ -1048,10 +1126,12 @@ struct EffectiveHamiltonian<S, FL, MultiMPS<S, FL>> {
         const vector<shared_ptr<SparseMatrixGroup<S, FL>>> &ket,
         const shared_ptr<OpElement<S, FL>> &hop,
         const shared_ptr<SymbolicColumnVector<S>> &hop_mat, S hop_left_vacuum,
-        const shared_ptr<TensorFunctions<S, FL>> &ptf, bool compute_diag = true)
+        const shared_ptr<TensorFunctions<S, FL>> &ptf, bool compute_diag = true,
+        const shared_ptr<NPDMScheme> &npdm_scheme = nullptr)
         : left_op_infos(left_op_infos), right_op_infos(right_op_infos), op(op),
           bra(bra), ket(ket), tf(ptf->copy()), hop_mat(hop_mat),
-          hop_left_vacuum(hop_left_vacuum), compute_diag(compute_diag) {
+          hop_left_vacuum(hop_left_vacuum), compute_diag(compute_diag),
+          npdm_scheme(npdm_scheme) {
         // wavefunction
         if (compute_diag) {
             // for non-hermitian hamiltonian, bra and ket may share the same
@@ -1401,7 +1481,8 @@ struct EffectiveHamiltonian<S, FL, MultiMPS<S, FL>> {
         post_precompute();
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         return make_tuple(eners, ndav, (size_t)nflop, t.get_time());
     }
@@ -1451,7 +1532,8 @@ struct EffectiveHamiltonian<S, FL, MultiMPS<S, FL>> {
     tuple<vector<pair<shared_ptr<OpExpr<S>>, vector<FL>>>, size_t, double>
     expect(typename const_fl_type<FL>::FL const_e,
            ExpectationAlgorithmTypes algo_type, ExpectationTypes ex_type,
-           const shared_ptr<ParallelRule<S>> &para_rule = nullptr) {
+           const shared_ptr<ParallelRule<S>> &para_rule = nullptr,
+           uint8_t fuse_left = -1) {
         shared_ptr<OpExpr<S>> expr = nullptr;
         if ((FL)const_e != (FL)0.0 && op->mat->data.size() > 0)
             expr = add_const_term(const_e, para_rule);
@@ -1552,7 +1634,8 @@ struct EffectiveHamiltonian<S, FL, MultiMPS<S, FL>> {
         tf->opf->seq->mode = mode;
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         return make_tuple(expectations, (size_t)nflop, t.get_time());
     }
@@ -1670,7 +1753,8 @@ struct EffectiveHamiltonian<S, FL, MultiMPS<S, FL>> {
         post_precompute();
         uint64_t nflop = tf->opf->seq->cumulative_nflop;
         if (para_rule != nullptr)
-            para_rule->comm->reduce_sum(&nflop, 1, para_rule->comm->root);
+            para_rule->comm->reduce_sum_optional(&nflop, 1,
+                                                 para_rule->comm->root);
         tf->opf->seq->cumulative_nflop = 0;
         return make_pair(r, make_tuple(energy, norm, 4 + eval_energy,
                                        (size_t)nflop, t.get_time()));

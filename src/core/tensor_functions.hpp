@@ -23,11 +23,13 @@
 #include "operator_functions.hpp"
 #include "operator_tensor.hpp"
 #include "sparse_matrix.hpp"
+#include "spin_permutation.hpp"
 #include "symbolic.hpp"
 #include <array>
 #include <cassert>
 #include <map>
 #include <memory>
+#include <string>
 #include <unordered_map>
 
 using namespace std;
@@ -570,15 +572,752 @@ template <typename S, typename FL> struct TensorFunctions {
             break;
         }
     }
+    void npdm_middle_intermediates(
+        const shared_ptr<NPDMScheme> &scheme,
+        const shared_ptr<NPDMCounter> &counter, int n_sites, int center,
+        uint64_t &mshape,
+        vector<vector<vector<uint64_t>>> &mshape_presum) const {
+        mshape = 0;
+        mshape_presum.resize(1);
+        mshape_presum[0] =
+            vector<vector<uint64_t>>(scheme->middle_blocking.size());
+        for (int i = 0; i < scheme->middle_blocking.size(); i++) {
+            mshape_presum[0][i] =
+                vector<uint64_t>(scheme->middle_blocking[i].size() + 1);
+            mshape_presum[0][i][0] =
+                i == 0 ? 0 : mshape_presum[0][i - 1].back();
+            for (int j = 0; j < scheme->middle_blocking[i].size(); j++) {
+                uint32_t lx = scheme->middle_blocking[i][j].first;
+                uint32_t rx = scheme->middle_blocking[i][j].second;
+                uint64_t lcnt = counter->count_left(
+                    scheme->left_terms[lx].first.first, center, true);
+                uint64_t rcnt = counter->count_right(
+                    scheme->right_terms[rx].first.first, center + 1);
+                mshape_presum[0][i][j + 1] =
+                    mshape_presum[0][i][j] + lcnt * rcnt;
+                mshape += lcnt * rcnt;
+            }
+        }
+        if (center == n_sites - 2) {
+            mshape_presum.push_back(
+                vector<vector<uint64_t>>(scheme->last_middle_blocking.size()));
+            for (int i = 0; i < scheme->last_middle_blocking.size(); i++) {
+                mshape_presum[1][i] = vector<uint64_t>(
+                    scheme->last_middle_blocking[i].size() + 1);
+                mshape_presum[1][i][0] = i == 0
+                                             ? mshape_presum[0].back().back()
+                                             : mshape_presum[1][i - 1].back();
+                if (scheme->last_middle_blocking[i].size() != 0)
+                    for (int j = 0; j < scheme->last_middle_blocking[i].size();
+                         j++) {
+                        uint32_t lx = scheme->last_middle_blocking[i][j].first;
+                        uint32_t rx = scheme->last_middle_blocking[i][j].second;
+                        assert(scheme->left_terms[lx].second == false ||
+                               scheme->left_terms[lx].first.first.size() == 0);
+                        uint64_t lcnt = counter->count_left(
+                            scheme->left_terms[lx].first.first, center, false);
+                        uint64_t rcnt = counter->count_right(
+                            rx < scheme->right_terms.size()
+                                ? scheme->right_terms[rx].first.first
+                                : scheme
+                                      ->last_right_terms
+                                          [rx - scheme->right_terms.size()]
+                                      .first.first,
+                            center + 1);
+                        mshape_presum[1][i][j + 1] =
+                            mshape_presum[1][i][j] + lcnt * rcnt;
+                        mshape += lcnt * rcnt;
+                    }
+            }
+        }
+        assert(mshape == 0 ? mshape_presum.back().size() == 0
+                           : mshape_presum.back().back().back() == mshape);
+    }
+    virtual shared_ptr<GTensor<FL, uint64_t>>
+    npdm_sort_load_file(const string &filename, bool compressed) const {
+        shared_ptr<GTensor<FL, uint64_t>> p =
+            make_shared<GTensor<FL, uint64_t>>();
+        string fn = filename + (compressed ? ".fpc" : ".npy");
+        ifstream ifs(fn.c_str(), ios::binary);
+        if (!ifs.good())
+            throw runtime_error("TensorFunctions::npdm_sort load on '" + fn +
+                                "' failed.");
+        if (compressed) {
+            size_t arr_len;
+            ifs >> arr_len;
+            p->data =
+                make_shared<vector<FL>>(arr_len / (sizeof(FL) / sizeof(FP)));
+            p->shape =
+                vector<uint64_t>{(uint64_t)arr_len / (sizeof(FL) / sizeof(FP))};
+            make_shared<FPCodec<FP>>()->read_array(ifs, (FP *)p->data->data(),
+                                                   arr_len);
+        } else
+            p->read_array(ifs);
+        if (ifs.fail() || ifs.bad())
+            throw runtime_error("TensorFunctions::npdm_sort load on '" + fn +
+                                "' failed.");
+        ifs.close();
+        return p;
+    }
+    template <typename FLX>
+    void npdm_sort(const shared_ptr<NPDMScheme> &scheme,
+                   const vector<shared_ptr<GTensor<FLX>>> &npdm,
+                   const string &filename, int n_sites, int center,
+                   bool compressed) const {
+        shared_ptr<NPDMCounter> counter =
+            make_shared<NPDMCounter>(scheme->n_max_ops, n_sites);
+        shared_ptr<GTensor<FL, uint64_t>> p =
+            npdm_sort_load_file(filename, compressed);
+        if (p == nullptr)
+            return;
+        uint64_t mshape = 0;
+        vector<vector<vector<uint64_t>>> mshape_presum;
+        npdm_middle_intermediates(scheme, counter, n_sites, center, mshape,
+                                  mshape_presum);
+        map<vector<uint16_t>, vector<pair<int, int>>> middle_patterns;
+        for (int i = 0; i < (int)scheme->perms.size(); i++)
+            for (int j = 0; j < (int)scheme->perms[i]->index_patterns.size();
+                 j++)
+                middle_patterns[scheme->perms[i]->index_patterns[j]].push_back(
+                    make_pair(i, j));
+        int middle_count = (int)scheme->middle_blocking.size();
+        int middle_base_count = middle_count;
+        if (center == n_sites - 2)
+            middle_count += (int)scheme->last_middle_blocking.size();
+        int ntg = threading->activate_global();
+#pragma omp parallel for schedule(dynamic) num_threads(ntg)
+        for (int ii = 0; ii < middle_count; ii++) {
+            bool is_last = ii >= middle_base_count;
+            int i = is_last ? ii - middle_base_count : ii;
+            if (scheme->n_max_ops == 0 && center != 0)
+                continue;
+            if (is_last && scheme->last_middle_blocking[i].size() == 0)
+                continue;
+            map<string, int> middle_cd_map;
+            for (int j = 0; j < (int)scheme->middle_terms[i].size(); j++)
+                middle_cd_map[scheme->middle_terms[i][j]] = j;
+            for (auto &r : middle_patterns.at(scheme->middle_perm_patterns[i]))
+                for (auto &pr : scheme->perms[r.first]->data[r.second]) {
+                    const vector<uint16_t> &mask = scheme->perms[r.first]->mask;
+                    const vector<uint16_t> &perm = pr.first;
+                    for (auto &prr : pr.second) {
+                        int jj = middle_cd_map[prr.second];
+                        const uint32_t lx =
+                            is_last ? scheme->last_middle_blocking[i][jj].first
+                                    : scheme->middle_blocking[i][jj].first;
+                        const uint32_t rx =
+                            is_last ? scheme->last_middle_blocking[i][jj].second
+                                    : scheme->middle_blocking[i][jj].second;
+                        const vector<uint16_t> &rpat =
+                            rx < scheme->right_terms.size()
+                                ? scheme->right_terms[rx].first.first
+                                : scheme
+                                      ->last_right_terms
+                                          [rx - scheme->right_terms.size()]
+                                      .first.first;
+                        const uint64_t lcnt = counter->count_left(
+                            scheme->left_terms[lx].first.first, center,
+                            !is_last);
+                        const uint64_t rcnt =
+                            counter->count_right(rpat, center + 1);
+                        if (lcnt == 0 || rcnt == 0)
+                            continue;
+                        // left / right index linearlization multiplier
+                        vector<uint64_t> lmx(
+                            scheme->left_terms[lx].first.first.size(), 0);
+                        vector<uint64_t> rmx(rpat.size(), 0);
+                        uint64_t mxx = 1;
+                        for (int k = (int)perm.size() - 1; k >= 0; k--) {
+                            if (mask.size() != 0 && k != 0 &&
+                                mask[k] == mask[k - 1])
+                                continue;
+                            if (perm[k] < lmx.size())
+                                lmx[perm[k]] = mxx;
+                            else
+                                rmx[perm[k] - lmx.size()] = mxx;
+                            mxx *= n_sites;
+                        }
+                        // left / right indices
+                        vector<uint16_t> lxx, rxx;
+                        // left / right linearlized indices
+                        vector<uint64_t> lixx(lcnt), rixx(rcnt);
+                        counter->init_left(scheme->left_terms[lx].first.first,
+                                           center, !is_last, lxx);
+                        for (uint64_t il = 0; il < lcnt; il++) {
+                            for (int k = 0; k < (int)lmx.size(); k++)
+                                lixx[il] += lxx[k] * lmx[k];
+                            counter->next_left(
+                                scheme->left_terms[lx].first.first, center,
+                                lxx);
+                        }
+                        counter->init_right(rpat, center + 1, rxx);
+                        for (uint64_t ir = 0; ir < rcnt; ir++) {
+                            for (int k = 0; k < (int)rmx.size(); k++)
+                                rixx[ir] += rxx[k] * rmx[k];
+                            counter->next_right(rpat, center + 1, rxx);
+                        }
+                        // sorting
+                        const uint64_t ip = mshape_presum[is_last][i][jj];
+                        for (uint64_t il = 0; il < lcnt; il++)
+                            for (uint64_t ir = 0; ir < rcnt; ir++)
+                                (*npdm[r.first]->data)[lixx[il] + rixx[ir]] +=
+                                    (FLX)prr.first *
+                                    (FLX)(*p->data)[ip + il * rcnt + ir];
+                    }
+                }
+        }
+        threading->activate_normal();
+    }
+    struct NPDMIndexer {
+        vector<uint64_t> plidxs, pridxs;
+        shared_ptr<NPDMScheme> scheme;
+        shared_ptr<NPDMCounter> counter;
+        int center;
+        S vacuum;
+        NPDMIndexer(const shared_ptr<NPDMScheme> &scheme,
+                    const shared_ptr<NPDMCounter> &counter, int center,
+                    S vacuum)
+            : scheme(scheme), counter(counter), center(center), vacuum(vacuum) {
+            plidxs.resize(scheme->left_terms.size() + 1, 0);
+            pridxs.resize(scheme->right_terms.size() +
+                              scheme->last_right_terms.size() + 1,
+                          0);
+            for (int k = 0; k < (int)scheme->left_terms.size(); k++)
+                plidxs[k + 1] =
+                    plidxs[k] +
+                    counter->count_left(scheme->left_terms[k].first.first,
+                                        center, scheme->left_terms[k].second);
+            for (int k = 0; k < (int)scheme->right_terms.size(); k++)
+                pridxs[k + 1] =
+                    pridxs[k] +
+                    counter->count_right(scheme->right_terms[k].first.first,
+                                         center + 1);
+            for (int k = 0; k < (int)scheme->last_right_terms.size(); k++)
+                pridxs[k + 1 + scheme->right_terms.size()] =
+                    pridxs[k + scheme->right_terms.size()] +
+                    counter->count_right(
+                        scheme->last_right_terms[k].first.first, center + 1);
+        }
+        inline pair<uint64_t, uint64_t> get_left_count(uint32_t lx,
+                                                       bool is_last) const {
+            uint64_t lcnt = (uint64_t)counter->count_left(
+                scheme->left_terms[lx].first.first, center, !is_last);
+            uint64_t lshift = !scheme->left_terms[lx].second && !is_last
+                                  ? (uint64_t)counter->count_left(
+                                        scheme->left_terms[lx].first.first,
+                                        center, scheme->left_terms[lx].second) -
+                                        lcnt
+                                  : 0;
+            return make_pair(lcnt, plidxs[lx] + lshift);
+        }
+        inline pair<uint64_t, uint64_t> get_right_count(uint32_t rx) const {
+            const vector<uint16_t> &rpat =
+                rx < scheme->right_terms.size()
+                    ? scheme->right_terms[rx].first.first
+                    : scheme->last_right_terms[rx - scheme->right_terms.size()]
+                          .first.first;
+            uint64_t rcnt = counter->count_right(rpat, center + 1);
+            return make_pair(rcnt, pridxs[rx]);
+        }
+        inline void set_parallel_right_skip(uint32_t rx, uint64_t rcnt,
+                                            int msize, int mrank,
+                                            vector<uint8_t> &r) const {
+            uint64_t imj = 0;
+            const vector<uint16_t> &rpat = scheme->right_terms[rx].first.first;
+            for (int mj = center + 1; mj < counter->n_sites; mj++) {
+                uint64_t mjcnt = counter->count_right(rpat, mj) -
+                                 (mj == counter->n_sites - 1
+                                      ? 0
+                                      : counter->count_right(rpat, mj + 1));
+                if (mj % msize != mrank)
+                    memset(&r[imj], 1, sizeof(uint8_t) * mjcnt);
+                imj += mjcnt;
+            }
+            assert(imj == rcnt);
+        }
+        inline shared_ptr<SparseMatrix<S, FL>>
+        get_mat(uint64_t ixx, const shared_ptr<OperatorTensor<S, FL>> &xopt,
+                OpNames op_name) const {
+            SiteIndex sx(
+                {(uint16_t)(ixx >> 36), (uint16_t)((ixx >> 24) & 0xFFFLL),
+                 (uint16_t)((ixx >> 12) & 0xFFFLL), (uint16_t)(ixx & 0xFFFLL)},
+                {});
+            shared_ptr<OpElement<S, FL>> op =
+                make_shared<OpElement<S, FL>>(op_name, sx, vacuum);
+            return xopt->ops.count(op) ? xopt->ops.at(op) : nullptr;
+        }
+    };
+    // fast symbol-free expectation algorithm for NPDM
+    // cache_left should be used if wfn is smaller in the left side.
+    // so it is irrelavent for the zero-dot algorithm.
+    // but for one-dot it should be aligned with fuse_left
+    // better cache_left can save time for the M^3 part
+    virtual vector<pair<shared_ptr<OpExpr<S>>, FL>>
+    tensor_product_npdm_fragment(const shared_ptr<NPDMScheme> &scheme, S vacuum,
+                                 const string &filename, int n_sites,
+                                 int center, int parallel_center,
+                                 const shared_ptr<OperatorTensor<S, FL>> &lopt,
+                                 const shared_ptr<OperatorTensor<S, FL>> &ropt,
+                                 const shared_ptr<SparseMatrix<S, FL>> &cmat,
+                                 const shared_ptr<SparseMatrix<S, FL>> &vmat,
+                                 bool cache_left, bool compressed,
+                                 bool low_mem) const {
+        vector<pair<shared_ptr<OpExpr<S>>, FL>> expectations(1);
+        if (center == n_sites - 1) {
+            expectations[0] = make_pair(make_shared<OpCounter<S>>(0), (FL)0.0);
+            return expectations;
+        }
+        shared_ptr<VectorAllocator<FP>> d_alloc =
+            make_shared<VectorAllocator<FP>>();
+        S ket_dq = cmat->info->delta_quantum;
+        S bra_dq = vmat->info->delta_quantum;
+        shared_ptr<NPDMCounter> counter =
+            make_shared<NPDMCounter>(scheme->n_max_ops, n_sites);
+        uint64_t mshape = 0;
+        vector<vector<vector<uint64_t>>> mshape_presum;
+        npdm_middle_intermediates(scheme, counter, n_sites, center, mshape,
+                                  mshape_presum);
+        shared_ptr<NPDMIndexer> indexer =
+            make_shared<NPDMIndexer>(scheme, counter, center, vacuum);
+        expectations[0] = make_pair(make_shared<OpCounter<S>>(mshape), (FL)0.0);
+        shared_ptr<GTensor<FL, uint64_t>> result =
+            make_shared<GTensor<FL, uint64_t>>(vector<uint64_t>{mshape});
+        int middle_count = (int)scheme->middle_blocking.size();
+        int middle_base_count = middle_count;
+        if (center == n_sites - 2)
+            middle_count += (int)scheme->last_middle_blocking.size();
+        map<pair<uint32_t, bool>, vector<pair<int, int>>> cache_to_middle;
+        for (int ii = 0; ii < middle_count; ii++) {
+            bool is_last = ii >= middle_base_count;
+            int i = is_last ? ii - middle_base_count : ii;
+            if (is_last && scheme->last_middle_blocking[i].size() == 0)
+                continue;
+            for (int j = 0; j < (int)scheme->middle_blocking[i].size(); j++) {
+                uint32_t cx =
+                    cache_left
+                        ? (is_last ? scheme->last_middle_blocking[i][j].first
+                                   : scheme->middle_blocking[i][j].first)
+                        : (is_last ? scheme->last_middle_blocking[i][j].second
+                                   : scheme->middle_blocking[i][j].second);
+                cache_to_middle[make_pair(cx, is_last)].push_back(
+                    make_pair(i, j));
+            }
+        }
+        for (auto &ml : cache_to_middle) {
+            uint32_t cx = ml.first.first;
+            bool is_last = ml.first.second;
+            uint64_t ccnt, cshift;
+            tie(ccnt, cshift) = cache_left
+                                    ? indexer->get_left_count(cx, is_last)
+                                    : indexer->get_right_count(cx);
+            if (ccnt == 0)
+                continue;
+            if (low_mem) {
+                // low mem: do not parallelize / store M^3 contraction
+                // intermediates
+                if (cache_left) {
+                    // do M^3 contraction for each left operator
+                    uint64_t lcnt = ccnt, lshift = cshift;
+                    map<S, shared_ptr<SparseMatrix<S, FL>>> left_partials;
+                    for (uint64_t il = 0; il < lcnt; il++) {
+                        shared_ptr<SparseMatrix<S, FL>> lmat =
+                            indexer->get_mat(il + lshift, lopt, OpNames::XL);
+                        if (lmat != nullptr) {
+                            left_partials.clear();
+                            for (auto &mr : ml.second) {
+                                int i = mr.first, j = mr.second;
+                                uint32_t rx =
+                                    is_last
+                                        ? scheme->last_middle_blocking[i][j]
+                                              .second
+                                        : scheme->middle_blocking[i][j].second;
+                                uint64_t rcnt, rshift;
+                                tie(rcnt, rshift) =
+                                    indexer->get_right_count(rx);
+                                for (uint64_t ir = 0; ir < rcnt; ir++) {
+                                    shared_ptr<SparseMatrix<S, FL>> rmat =
+                                        indexer->get_mat(ir + rshift, ropt,
+                                                         OpNames::XR);
+                                    if (rmat == nullptr)
+                                        continue;
+                                    // FIXME: not working for non-singlet
+                                    // operators
+                                    S opdq = (lmat->info->delta_quantum +
+                                              rmat->info->delta_quantum)[0];
+                                    if (opdq.combine(bra_dq, ket_dq) ==
+                                        S(S::invalid))
+                                        continue;
+                                    if (!left_partials.count(
+                                            rmat->info->delta_quantum)) {
+                                        shared_ptr<SparseMatrix<S, FL>> xmat =
+                                            make_shared<SparseMatrix<S, FL>>(
+                                                d_alloc);
+                                        xmat->info = rmat->info;
+                                        xmat->allocate(xmat->info);
+                                        left_partials[rmat->info
+                                                          ->delta_quantum] =
+                                            xmat;
+                                        opf->tensor_left_partial_expectation(
+                                            0, lmat, xmat, cmat, vmat, opdq);
+                                    }
+                                }
+                                uint64_t iresult =
+                                    mshape_presum[is_last][i][j] + rcnt * il;
+                                parallel_for(
+                                    (size_t)rcnt,
+                                    [&left_partials, &ropt, &result, &indexer,
+                                     rshift, iresult](
+                                        const shared_ptr<TensorFunctions> &tf,
+                                        size_t pk) {
+                                        uint64_t ir = (uint64_t)pk;
+                                        shared_ptr<SparseMatrix<S, FL>> rmat =
+                                            indexer->get_mat(ir + rshift, ropt,
+                                                             OpNames::XR);
+                                        if (rmat != nullptr &&
+                                            left_partials.count(
+                                                rmat->info->delta_quantum)) {
+                                            shared_ptr<SparseMatrix<S, FL>>
+                                                lmat = left_partials.at(
+                                                    rmat->info->delta_quantum);
+                                            (*result->data)[iresult + ir] =
+                                                tf->opf->dot_product(lmat,
+                                                                     rmat);
+                                        }
+                                    });
+                            }
+                        }
+                    }
+                } else {
+                    // do M^3 contraction for each right operator
+                    uint64_t rcnt = ccnt, rshift = cshift;
+                    map<S, shared_ptr<SparseMatrix<S, FL>>> right_partials;
+                    for (uint64_t ir = 0; ir < rcnt; ir++) {
+                        shared_ptr<SparseMatrix<S, FL>> rmat =
+                            indexer->get_mat(ir + rshift, ropt, OpNames::XR);
+                        if (rmat != nullptr) {
+                            right_partials.clear();
+                            for (auto &mr : ml.second) {
+                                int i = mr.first, j = mr.second;
+                                uint32_t lx =
+                                    is_last
+                                        ? scheme->last_middle_blocking[i][j]
+                                              .first
+                                        : scheme->middle_blocking[i][j].first;
+                                uint64_t lcnt, lshift;
+                                tie(lcnt, lshift) =
+                                    indexer->get_left_count(lx, is_last);
+                                for (uint64_t il = 0; il < lcnt; il++) {
+                                    shared_ptr<SparseMatrix<S, FL>> lmat =
+                                        indexer->get_mat(il + lshift, lopt,
+                                                         OpNames::XL);
+                                    if (lmat == nullptr)
+                                        continue;
+                                    // FIXME: not working for non-singlet
+                                    // operators
+                                    S opdq = (lmat->info->delta_quantum +
+                                              rmat->info->delta_quantum)[0];
+                                    if (opdq.combine(bra_dq, ket_dq) ==
+                                        S(S::invalid))
+                                        continue;
+                                    if (!right_partials.count(
+                                            lmat->info->delta_quantum)) {
+                                        shared_ptr<SparseMatrix<S, FL>> xmat =
+                                            make_shared<SparseMatrix<S, FL>>(
+                                                d_alloc);
+                                        xmat->info = lmat->info;
+                                        xmat->allocate(xmat->info);
+                                        right_partials[lmat->info
+                                                           ->delta_quantum] =
+                                            xmat;
+                                        opf->tensor_right_partial_expectation(
+                                            0, xmat, rmat, cmat, vmat, opdq);
+                                    }
+                                }
+                                uint64_t iresult =
+                                    mshape_presum[is_last][i][j] + ir;
+                                parallel_for(
+                                    (size_t)lcnt,
+                                    [&right_partials, &lopt, &result, &indexer,
+                                     lshift, iresult, rcnt](
+                                        const shared_ptr<TensorFunctions> &tf,
+                                        size_t pk) {
+                                        uint64_t il = (uint64_t)pk;
+                                        shared_ptr<SparseMatrix<S, FL>> lmat =
+                                            indexer->get_mat(il + lshift, lopt,
+                                                             OpNames::XL);
+                                        if (lmat != nullptr &&
+                                            right_partials.count(
+                                                lmat->info->delta_quantum)) {
+                                            shared_ptr<SparseMatrix<S, FL>>
+                                                rmat = right_partials.at(
+                                                    lmat->info->delta_quantum);
+                                            (*result
+                                                  ->data)[iresult + rcnt * il] =
+                                                tf->opf->dot_product(lmat,
+                                                                     rmat);
+                                        }
+                                    });
+                            }
+                        }
+                    }
+                }
+            } else {
+                // parallelize and store M^3 contraction intermediates
+                vector<pair<shared_ptr<SparseMatrix<S, FL>>,
+                            map<S, shared_ptr<SparseMatrix<S, FL>>>>>
+                    c_partials;
+                vector<pair<size_t, S>> c_compute;
+                c_partials.reserve(ccnt);
+                if (cache_left) {
+                    uint64_t lcnt = ccnt, lshift = cshift;
+                    vector<shared_ptr<SparseMatrix<S, FL>>> r_partials;
+                    vector<uint64_t> left_idxs;
+                    vector<pair<int, uint64_t>> right_idxs;
+                    vector<uint64_t> right_cnts;
+                    left_idxs.reserve(lcnt);
+                    right_cnts.reserve(ml.second.size());
+                    int im = 0;
+                    for (auto &mr : ml.second) {
+                        int i = mr.first, j = mr.second;
+                        uint32_t rx =
+                            is_last ? scheme->last_middle_blocking[i][j].second
+                                    : scheme->middle_blocking[i][j].second;
+                        uint64_t rcnt, rshift;
+                        tie(rcnt, rshift) = indexer->get_right_count(rx);
+                        r_partials.reserve(rcnt);
+                        right_idxs.reserve(rcnt);
+                        right_cnts.push_back(rcnt);
+                        for (uint64_t ir = 0; ir < rcnt; ir++) {
+                            shared_ptr<SparseMatrix<S, FL>> rmat =
+                                indexer->get_mat(ir + rshift, ropt,
+                                                 OpNames::XR);
+                            if (rmat != nullptr) {
+                                right_idxs.push_back(make_pair(im, ir));
+                                r_partials.push_back(rmat);
+                            }
+                        }
+                        im++;
+                    }
+                    if (right_idxs.size() == 0)
+                        continue;
+                    for (uint64_t il = 0; il < lcnt; il++) {
+                        shared_ptr<SparseMatrix<S, FL>> lmat =
+                            indexer->get_mat(il + lshift, lopt, OpNames::XL);
+                        if (lmat != nullptr) {
+                            left_idxs.push_back(il);
+                            c_partials.push_back(make_pair(
+                                lmat,
+                                map<S, shared_ptr<SparseMatrix<S, FL>>>()));
+                            for (size_t ixr = 0; ixr < right_idxs.size();
+                                 ixr++) {
+                                auto &mr = ml.second[right_idxs[ixr].first];
+                                uint64_t ir = right_idxs[ixr].second;
+                                shared_ptr<SparseMatrix<S, FL>> rmat =
+                                    r_partials[ixr];
+                                // FIXME: not working for non-singlet operators
+                                S opdq = (lmat->info->delta_quantum +
+                                          rmat->info->delta_quantum)[0];
+                                if (opdq.combine(bra_dq, ket_dq) ==
+                                    S(S::invalid))
+                                    continue;
+                                if (!c_partials.back().second.count(
+                                        rmat->info->delta_quantum)) {
+                                    shared_ptr<SparseMatrix<S, FL>> xmat =
+                                        make_shared<SparseMatrix<S, FL>>(
+                                            d_alloc);
+                                    xmat->info = rmat->info;
+                                    xmat->allocate(xmat->info);
+                                    c_partials.back()
+                                        .second[rmat->info->delta_quantum] =
+                                        xmat;
+                                    c_compute.push_back(
+                                        make_pair(c_partials.size() - 1,
+                                                  rmat->info->delta_quantum));
+                                }
+                            }
+                        }
+                    }
+                    parallel_for(
+                        c_compute.size(),
+                        [&c_compute, &c_partials, &cmat, &vmat](
+                            const shared_ptr<TensorFunctions> &tf, size_t i) {
+                            shared_ptr<SparseMatrix<S, FL>> lmat =
+                                c_partials[c_compute[i].first].first;
+                            shared_ptr<SparseMatrix<S, FL>> rmat =
+                                c_partials[c_compute[i].first].second.at(
+                                    c_compute[i].second);
+                            // FIXME: not working for non-singlet operators
+                            S opdq = (lmat->info->delta_quantum +
+                                      rmat->info->delta_quantum)[0];
+                            tf->opf->tensor_left_partial_expectation(
+                                0, lmat, rmat, cmat, vmat, opdq);
+                        });
+                    parallel_for(
+                        left_idxs.size() * right_idxs.size(),
+                        [&c_partials, &r_partials, &left_idxs, &right_idxs,
+                         &right_cnts, &cmat, &vmat, &result, &mshape_presum,
+                         &ml, is_last](const shared_ptr<TensorFunctions> &tf,
+                                       size_t k) {
+                            size_t ixl = k / right_idxs.size(),
+                                   ixr = k % right_idxs.size();
+                            uint64_t il = left_idxs[ixl],
+                                     ir = right_idxs[ixr].second;
+                            auto &mr = ml.second[right_idxs[ixr].first];
+                            int i = mr.first, j = mr.second;
+                            uint64_t rcnt = right_cnts[right_idxs[ixr].first];
+                            uint64_t iresult =
+                                mshape_presum[is_last][i][j] + rcnt * il + ir;
+                            shared_ptr<SparseMatrix<S, FL>> rmat =
+                                r_partials[ixr];
+                            if (c_partials[ixl].second.count(
+                                    rmat->info->delta_quantum)) {
+                                shared_ptr<SparseMatrix<S, FL>> lmat =
+                                    c_partials[ixl].second.at(
+                                        rmat->info->delta_quantum);
+                                (*result->data)[iresult] =
+                                    tf->opf->dot_product(lmat, rmat);
+                            }
+                        });
+                } else {
+                    uint64_t rcnt = ccnt, rshift = cshift;
+                    vector<shared_ptr<SparseMatrix<S, FL>>> l_partials;
+                    vector<uint64_t> right_idxs;
+                    vector<pair<int, uint64_t>> left_idxs;
+                    right_idxs.reserve(rcnt);
+                    int im = 0;
+                    for (auto &mr : ml.second) {
+                        int i = mr.first, j = mr.second;
+                        uint32_t lx =
+                            is_last ? scheme->last_middle_blocking[i][j].first
+                                    : scheme->middle_blocking[i][j].first;
+                        uint64_t lcnt, lshift;
+                        tie(lcnt, lshift) =
+                            indexer->get_left_count(lx, is_last);
+                        l_partials.reserve(lcnt);
+                        left_idxs.reserve(lcnt);
+                        for (uint64_t il = 0; il < lcnt; il++) {
+                            shared_ptr<SparseMatrix<S, FL>> lmat =
+                                indexer->get_mat(il + lshift, lopt,
+                                                 OpNames::XL);
+                            if (lmat != nullptr) {
+                                left_idxs.push_back(make_pair(im, il));
+                                l_partials.push_back(lmat);
+                            }
+                        }
+                        im++;
+                    }
+                    if (left_idxs.size() == 0)
+                        continue;
+                    for (uint64_t ir = 0; ir < rcnt; ir++) {
+                        shared_ptr<SparseMatrix<S, FL>> rmat =
+                            indexer->get_mat(ir + rshift, ropt, OpNames::XR);
+                        if (rmat != nullptr) {
+                            right_idxs.push_back(ir);
+                            c_partials.push_back(make_pair(
+                                rmat,
+                                map<S, shared_ptr<SparseMatrix<S, FL>>>()));
+                            for (size_t ixl = 0; ixl < left_idxs.size();
+                                 ixl++) {
+                                auto &mr = ml.second[left_idxs[ixl].first];
+                                uint64_t il = left_idxs[ixl].second;
+                                shared_ptr<SparseMatrix<S, FL>> lmat =
+                                    l_partials[ixl];
+                                // FIXME: not working for non-singlet operators
+                                S opdq = (lmat->info->delta_quantum +
+                                          rmat->info->delta_quantum)[0];
+                                if (opdq.combine(bra_dq, ket_dq) ==
+                                    S(S::invalid))
+                                    continue;
+                                if (!c_partials.back().second.count(
+                                        lmat->info->delta_quantum)) {
+                                    shared_ptr<SparseMatrix<S, FL>> xmat =
+                                        make_shared<SparseMatrix<S, FL>>(
+                                            d_alloc);
+                                    xmat->info = lmat->info;
+                                    xmat->allocate(xmat->info);
+                                    c_partials.back()
+                                        .second[lmat->info->delta_quantum] =
+                                        xmat;
+                                    c_compute.push_back(
+                                        make_pair(c_partials.size() - 1,
+                                                  lmat->info->delta_quantum));
+                                }
+                            }
+                        }
+                    }
+                    parallel_for(
+                        c_compute.size(),
+                        [&c_compute, &c_partials, &cmat, &vmat](
+                            const shared_ptr<TensorFunctions> &tf, size_t i) {
+                            shared_ptr<SparseMatrix<S, FL>> rmat =
+                                c_partials[c_compute[i].first].first;
+                            shared_ptr<SparseMatrix<S, FL>> lmat =
+                                c_partials[c_compute[i].first].second.at(
+                                    c_compute[i].second);
+                            // FIXME: not working for non-singlet operators
+                            S opdq = (lmat->info->delta_quantum +
+                                      rmat->info->delta_quantum)[0];
+                            tf->opf->tensor_right_partial_expectation(
+                                0, lmat, rmat, cmat, vmat, opdq);
+                        });
+                    parallel_for(
+                        left_idxs.size() * right_idxs.size(),
+                        [&c_partials, &l_partials, &left_idxs, &right_idxs,
+                         &cmat, &vmat, &result, &mshape_presum, &ml, is_last,
+                         rcnt](const shared_ptr<TensorFunctions> &tf,
+                               size_t k) {
+                            size_t ixl = k / right_idxs.size(),
+                                   ixr = k % right_idxs.size();
+                            uint64_t il = left_idxs[ixl].second,
+                                     ir = right_idxs[ixr];
+                            auto &mr = ml.second[left_idxs[ixl].first];
+                            int i = mr.first, j = mr.second;
+                            uint64_t iresult =
+                                mshape_presum[is_last][i][j] + rcnt * il + ir;
+                            shared_ptr<SparseMatrix<S, FL>> lmat =
+                                l_partials[ixl];
+                            if (c_partials[ixr].second.count(
+                                    lmat->info->delta_quantum)) {
+                                shared_ptr<SparseMatrix<S, FL>> rmat =
+                                    c_partials[ixr].second.at(
+                                        lmat->info->delta_quantum);
+                                (*result->data)[iresult] =
+                                    tf->opf->dot_product(lmat, rmat);
+                            }
+                        });
+                }
+            }
+        };
+        string fn = filename + (compressed ? ".fpc" : ".npy");
+        ofstream ofs(fn.c_str(), ios::binary);
+        if (!ofs.good())
+            throw runtime_error(
+                "TensorFunctions::tensor_product_npdm_fragment save on '" + fn +
+                "' failed.");
+        if (compressed) {
+            ofs << result->data->size() * (sizeof(FL) / sizeof(FP));
+            make_shared<FPCodec<FP>>()->write_array(
+                ofs, (FP *)result->data->data(),
+                result->data->size() * (sizeof(FL) / sizeof(FP)));
+        } else
+            result->write_array(ofs);
+        if (!ofs.good())
+            throw runtime_error(
+                "TensorFunctions::tensor_product_npdm_fragment save on '" + fn +
+                "' failed.");
+        ofs.close();
+        return expectations;
+    }
     // fast expectation algorithm for NPDM, by reusing partially contracted
     // left part, assuming there are smaller number of unique left operators
-    virtual vector<pair<shared_ptr<OpExpr<S>>, FL>> tensor_product_expectation(
-        const vector<shared_ptr<OpExpr<S>>> &names,
-        const vector<shared_ptr<OpExpr<S>>> &exprs,
-        const shared_ptr<OperatorTensor<S, FL>> &lopt,
-        const shared_ptr<OperatorTensor<S, FL>> &ropt,
-        const shared_ptr<SparseMatrix<S, FL>> &cmat,
-        const shared_ptr<SparseMatrix<S, FL>> &vmat) const {
+    virtual vector<pair<shared_ptr<OpExpr<S>>, FL>>
+    tensor_product_expectation(const vector<shared_ptr<OpExpr<S>>> &names,
+                               const vector<shared_ptr<OpExpr<S>>> &exprs,
+                               const shared_ptr<OperatorTensor<S, FL>> &lopt,
+                               const shared_ptr<OperatorTensor<S, FL>> &ropt,
+                               const shared_ptr<SparseMatrix<S, FL>> &cmat,
+                               const shared_ptr<SparseMatrix<S, FL>> &vmat,
+                               bool all_reduce) const {
         vector<pair<shared_ptr<OpExpr<S>>, FL>> expectations(names.size());
         map<tuple<uint8_t, S, S>,
             unordered_map<shared_ptr<OpExpr<S>>,
@@ -666,18 +1405,17 @@ template <typename S, typename FL> struct TensorFunctions {
                                             mm.first, mm.second));
                 mm.second->allocate(mm.second->info);
             }
-        parallel_for(vparts.size(),
-                     [&vparts, &lopt, &cmat,
-                      &vmat](const shared_ptr<TensorFunctions> &tf, size_t i) {
-                         uint8_t conj = get<0>(vparts[i]);
-                         S opdq = get<1>(vparts[i]);
-                         shared_ptr<SparseMatrix<S, FL>> lmat =
-                             lopt->ops.at(get<2>(vparts[i]));
-                         shared_ptr<SparseMatrix<S, FL>> rmat =
-                             get<3>(vparts[i]);
-                         tf->opf->tensor_partial_expectation(conj, lmat, rmat,
-                                                             cmat, vmat, opdq);
-                     });
+        parallel_for(vparts.size(), [&vparts, &lopt, &cmat, &vmat](
+                                        const shared_ptr<TensorFunctions> &tf,
+                                        size_t i) {
+            uint8_t conj = get<0>(vparts[i]);
+            S opdq = get<1>(vparts[i]);
+            shared_ptr<SparseMatrix<S, FL>> lmat =
+                lopt->ops.at(get<2>(vparts[i]));
+            shared_ptr<SparseMatrix<S, FL>> rmat = get<3>(vparts[i]);
+            tf->opf->tensor_left_partial_expectation(conj, lmat, rmat, cmat,
+                                                     vmat, opdq);
+        });
         vector<size_t> prod_idxs;
         prod_idxs.reserve(exprs.size());
         for (size_t k = 0; k < exprs.size(); k++) {
@@ -1446,6 +2184,7 @@ template <typename S, typename FL> struct TensorFunctions {
         c = dopt;
     }
     // c = a x b (dot)
+    // dot means it is from the dot block
     virtual void left_contract(const shared_ptr<OperatorTensor<S, FL>> &a,
                                const shared_ptr<OperatorTensor<S, FL>> &b,
                                shared_ptr<OperatorTensor<S, FL>> &c,
@@ -1491,6 +2230,7 @@ template <typename S, typename FL> struct TensorFunctions {
         }
     }
     // c = b (dot) x a
+    // dot means it is from the dot block
     virtual void right_contract(const shared_ptr<OperatorTensor<S, FL>> &a,
                                 const shared_ptr<OperatorTensor<S, FL>> &b,
                                 shared_ptr<OperatorTensor<S, FL>> &c,
@@ -1533,6 +2273,130 @@ template <typename S, typename FL> struct TensorFunctions {
                 });
             if (opf->seq->mode == SeqTypes::Auto)
                 opf->seq->auto_perform();
+        }
+    }
+    // c = mpst_bra x [ a x b (dot) ] x mpst_ket
+    // without consuming large memory of blocking
+    // need to make sure a and c are not in the same frame
+    virtual void
+    left_contract_rotate(const shared_ptr<OperatorTensor<S, FL>> &a,
+                         const shared_ptr<OperatorTensor<S, FL>> &b,
+                         const shared_ptr<SparseMatrix<S, FL>> &mpst_bra,
+                         const shared_ptr<SparseMatrix<S, FL>> &mpst_ket,
+                         shared_ptr<OperatorTensor<S, FL>> &ab,
+                         shared_ptr<OperatorTensor<S, FL>> &c,
+                         const shared_ptr<Symbolic<S>> &cexprs = nullptr,
+                         OpNamesSet delayed = OpNamesSet()) const {
+        if (frame_<FP>()->use_main_stack)
+            for (auto &p : ab->ops) {
+                shared_ptr<OpElement<S, FL>> op =
+                    dynamic_pointer_cast<OpElement<S, FL>>(p.first);
+                if (a == nullptr || !delayed(op->name))
+                    ab->ops.at(op)->allocate(ab->ops.at(op)->info);
+            }
+        if (a == nullptr) {
+            left_assign(b, ab);
+            left_rotate(ab, mpst_bra, mpst_ket, c);
+        } else {
+            for (auto &p : c->ops) {
+                shared_ptr<OpElement<S, FL>> op =
+                    dynamic_pointer_cast<OpElement<S, FL>>(p.first);
+                c->ops.at(op)->allocate(c->ops.at(op)->info);
+            }
+            shared_ptr<Symbolic<S>> exprs =
+                cexprs == nullptr ? a->lmat * b->lmat : cexprs;
+            assert(exprs->data.size() == ab->lmat->data.size());
+            // because of deallocation of the ab, we cannot use auto
+            assert(opf->seq->mode != SeqTypes::Auto);
+            parallel_for(
+                exprs->data.size(),
+                [&a, &b, &ab, &c, &mpst_bra, &mpst_ket, &exprs,
+                 &delayed](const shared_ptr<TensorFunctions> &tf, size_t i) {
+                    shared_ptr<OpElement<S, FL>> cop =
+                        dynamic_pointer_cast<OpElement<S, FL>>(
+                            ab->lmat->data[i]);
+                    shared_ptr<OpExpr<S>> op = abs_value(ab->lmat->data[i]);
+                    shared_ptr<OpExpr<S>> expr =
+                        exprs->data[i] * ((FP)1.0 / cop->factor);
+                    if (!delayed(cop->name)) {
+                        if (!frame_<FP>()->use_main_stack) {
+                            // skip cached part
+                            if (ab->ops.at(op)->alloc != nullptr)
+                                return;
+                            ab->ops.at(op)->alloc =
+                                make_shared<VectorAllocator<FP>>();
+                            ab->ops.at(op)->allocate(ab->ops.at(op)->info);
+                        }
+                        tf->tensor_product(expr, a->ops, b->ops,
+                                           ab->ops.at(op));
+                        tf->opf->tensor_rotate(ab->ops.at(op), c->ops.at(op),
+                                               mpst_bra, mpst_ket, false);
+                        if (!frame_<FP>()->use_main_stack)
+                            ab->ops.at(op)->deallocate();
+                    }
+                });
+        }
+    }
+    // c = mpst_bra x [ b (dot) x a ] x mpst_ket
+    // without consuming large memory of blocking
+    // need to make sure a and c are not in the same frame
+    virtual void
+    right_contract_rotate(const shared_ptr<OperatorTensor<S, FL>> &a,
+                          const shared_ptr<OperatorTensor<S, FL>> &b,
+                          const shared_ptr<SparseMatrix<S, FL>> &mpst_bra,
+                          const shared_ptr<SparseMatrix<S, FL>> &mpst_ket,
+                          shared_ptr<OperatorTensor<S, FL>> &ab,
+                          shared_ptr<OperatorTensor<S, FL>> &c,
+                          const shared_ptr<Symbolic<S>> &cexprs = nullptr,
+                          OpNamesSet delayed = OpNamesSet()) const {
+        if (frame_<FP>()->use_main_stack)
+            for (auto &p : ab->ops) {
+                shared_ptr<OpElement<S, FL>> op =
+                    dynamic_pointer_cast<OpElement<S, FL>>(p.first);
+                if (a == nullptr || !delayed(op->name))
+                    ab->ops.at(op)->allocate(ab->ops.at(op)->info);
+            }
+        if (a == nullptr) {
+            right_assign(b, ab);
+            right_rotate(ab, mpst_bra, mpst_ket, c);
+        } else {
+            for (auto &p : c->ops) {
+                shared_ptr<OpElement<S, FL>> op =
+                    dynamic_pointer_cast<OpElement<S, FL>>(p.first);
+                c->ops.at(op)->allocate(c->ops.at(op)->info);
+            }
+            shared_ptr<Symbolic<S>> exprs =
+                cexprs == nullptr ? b->rmat * a->rmat : cexprs;
+            assert(exprs->data.size() == ab->rmat->data.size());
+            // because of deallocation of the ab, we cannot use auto
+            assert(opf->seq->mode != SeqTypes::Auto);
+            parallel_for(
+                exprs->data.size(),
+                [&a, &b, &ab, &c, &mpst_bra, &mpst_ket, &exprs,
+                 &delayed](const shared_ptr<TensorFunctions> &tf, size_t i) {
+                    shared_ptr<OpElement<S, FL>> cop =
+                        dynamic_pointer_cast<OpElement<S, FL>>(
+                            ab->rmat->data[i]);
+                    shared_ptr<OpExpr<S>> op = abs_value(ab->rmat->data[i]);
+                    shared_ptr<OpExpr<S>> expr =
+                        exprs->data[i] * ((FP)1.0 / cop->factor);
+                    if (!delayed(cop->name)) {
+                        if (!frame_<FP>()->use_main_stack) {
+                            // skip cached part
+                            if (ab->ops.at(op)->alloc != nullptr)
+                                return;
+                            ab->ops.at(op)->alloc =
+                                make_shared<VectorAllocator<FP>>();
+                            ab->ops.at(op)->allocate(ab->ops.at(op)->info);
+                        }
+                        tf->tensor_product(expr, b->ops, a->ops,
+                                           ab->ops.at(op));
+                        tf->opf->tensor_rotate(ab->ops.at(op), c->ops.at(op),
+                                               mpst_bra, mpst_ket, true);
+                        if (!frame_<FP>()->use_main_stack)
+                            ab->ops.at(op)->deallocate();
+                    }
+                });
         }
     }
 };

@@ -59,6 +59,8 @@ template <typename S, typename FL> struct CondensedMPO : MPO<S, FL> {
         MPO<S, FL>::const_e = mpo->const_e;
         MPO<S, FL>::op = mpo->op;
         MPO<S, FL>::left_vacuum = mpo->left_vacuum;
+        MPO<S, FL>::npdm_scheme = mpo->npdm_scheme;
+        MPO<S, FL>::npdm_parallel_center = mpo->npdm_parallel_center;
         shared_ptr<OpExpr<S>> zero_op = make_shared<OpExpr<S>>();
         if (mpo->schemer == nullptr)
             MPO<S, FL>::schemer = nullptr;
@@ -583,6 +585,8 @@ template <typename S, typename FL> struct FusedMPO : MPO<S, FL> {
         MPO<S, FL>::const_e = mpo->const_e;
         MPO<S, FL>::op = mpo->op;
         MPO<S, FL>::left_vacuum = mpo->left_vacuum;
+        MPO<S, FL>::npdm_scheme = mpo->npdm_scheme;
+        MPO<S, FL>::npdm_parallel_center = mpo->npdm_parallel_center;
         if (mpo->schemer == nullptr)
             MPO<S, FL>::schemer = nullptr;
         else {
@@ -609,8 +613,9 @@ template <typename S, typename FL> struct FusedMPO : MPO<S, FL> {
         assert(fused_mat->m == 1 || fused_mat->n == 1);
         shared_ptr<StateInfo<S>> fused_basis = nullptr;
         if (ref == nullptr)
-            fused_basis = make_shared<StateInfo<S>>(
-                StateInfo<S>::tensor_product(*basis[a], *basis[b], S::invalid));
+            fused_basis =
+                make_shared<StateInfo<S>>(StateInfo<S>::tensor_product(
+                    *basis[a], *basis[b], S(S::invalid)));
         else
             fused_basis = make_shared<StateInfo<S>>(
                 StateInfo<S>::tensor_product(*basis[a], *basis[b], *ref));

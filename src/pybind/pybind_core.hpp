@@ -42,6 +42,7 @@ PYBIND11_MAKE_OPAQUE(vector<uint32_t>);
 PYBIND11_MAKE_OPAQUE(vector<double>);
 PYBIND11_MAKE_OPAQUE(vector<long double>);
 PYBIND11_MAKE_OPAQUE(vector<complex<double>>);
+PYBIND11_MAKE_OPAQUE(vector<complex<long double>>);
 PYBIND11_MAKE_OPAQUE(vector<size_t>);
 PYBIND11_MAKE_OPAQUE(vector<string>);
 PYBIND11_MAKE_OPAQUE(vector<vector<uint8_t>>);
@@ -51,8 +52,10 @@ PYBIND11_MAKE_OPAQUE(vector<std::array<int16_t, 3>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<double>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<long double>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<complex<double>>>);
+PYBIND11_MAKE_OPAQUE(vector<vector<complex<long double>>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<vector<double>>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<vector<complex<double>>>>);
+PYBIND11_MAKE_OPAQUE(vector<vector<vector<complex<long double>>>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<int>>);
 PYBIND11_MAKE_OPAQUE(vector<pair<int, int>>);
 PYBIND11_MAKE_OPAQUE(vector<pair<long long int, int>>);
@@ -74,8 +77,11 @@ PYBIND11_MAKE_OPAQUE(
 PYBIND11_MAKE_OPAQUE(vector<shared_ptr<GTensor<double>>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<shared_ptr<GTensor<double>>>>);
 PYBIND11_MAKE_OPAQUE(vector<shared_ptr<GCSRMatrix<double>>>);
+PYBIND11_MAKE_OPAQUE(vector<pair<pair<int, int>, double>>);
+PYBIND11_MAKE_OPAQUE(vector<pair<pair<long long int, long long int>, double>>);
 // SZ
 PYBIND11_MAKE_OPAQUE(vector<SZ>);
+PYBIND11_MAKE_OPAQUE(vector<vector<SZ>>);
 PYBIND11_MAKE_OPAQUE(vector<pair<uint8_t, SZ>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<pair<uint8_t, SZ>>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<vector<pair<SZ, double>>>>);
@@ -99,6 +105,8 @@ PYBIND11_MAKE_OPAQUE(map<OpNames, shared_ptr<SparseMatrix<SZ, double>>>);
 PYBIND11_MAKE_OPAQUE(
     unordered_map<string, shared_ptr<SparseMatrix<SZ, double>>>);
 PYBIND11_MAKE_OPAQUE(
+    vector<unordered_map<string, shared_ptr<SparseMatrix<SZ, double>>>>);
+PYBIND11_MAKE_OPAQUE(
     vector<map<OpNames, shared_ptr<SparseMatrix<SZ, double>>>>);
 PYBIND11_MAKE_OPAQUE(
     map<shared_ptr<OpExpr<SZ>>, shared_ptr<SparseMatrix<SZ, double>>,
@@ -108,6 +116,7 @@ PYBIND11_MAKE_OPAQUE(
     vector<vector<pair<pair<SZ, SZ>, shared_ptr<GTensor<double>>>>>);
 // SU2
 PYBIND11_MAKE_OPAQUE(vector<SU2>);
+PYBIND11_MAKE_OPAQUE(vector<vector<SU2>>);
 PYBIND11_MAKE_OPAQUE(vector<pair<uint8_t, SU2>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<pair<uint8_t, SU2>>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<vector<pair<SU2, double>>>>);
@@ -131,6 +140,8 @@ PYBIND11_MAKE_OPAQUE(map<OpNames, shared_ptr<SparseMatrix<SU2, double>>>);
 PYBIND11_MAKE_OPAQUE(
     unordered_map<string, shared_ptr<SparseMatrix<SU2, double>>>);
 PYBIND11_MAKE_OPAQUE(
+    vector<unordered_map<string, shared_ptr<SparseMatrix<SU2, double>>>>);
+PYBIND11_MAKE_OPAQUE(
     vector<map<OpNames, shared_ptr<SparseMatrix<SU2, double>>>>);
 PYBIND11_MAKE_OPAQUE(
     map<shared_ptr<OpExpr<SU2>>, shared_ptr<SparseMatrix<SU2, double>>,
@@ -143,18 +154,25 @@ PYBIND11_MAKE_OPAQUE(vector<map<string, string>>);
 PYBIND11_MAKE_OPAQUE(vector<pair<string, string>>);
 // SZK
 PYBIND11_MAKE_OPAQUE(vector<SZK>);
+PYBIND11_MAKE_OPAQUE(vector<vector<SZK>>);
 // SU2K
 PYBIND11_MAKE_OPAQUE(vector<SU2K>);
+PYBIND11_MAKE_OPAQUE(vector<vector<SU2K>>);
 // SGF
 PYBIND11_MAKE_OPAQUE(vector<SGF>);
+PYBIND11_MAKE_OPAQUE(vector<vector<SGF>>);
 // SGB
 PYBIND11_MAKE_OPAQUE(vector<SGB>);
+PYBIND11_MAKE_OPAQUE(vector<vector<SGB>>);
 
 #ifdef _USE_COMPLEX
 // complex
 PYBIND11_MAKE_OPAQUE(vector<shared_ptr<GTensor<complex<double>>>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<shared_ptr<GTensor<complex<double>>>>>);
 PYBIND11_MAKE_OPAQUE(vector<shared_ptr<GCSRMatrix<complex<double>>>>);
+PYBIND11_MAKE_OPAQUE(vector<pair<pair<int, int>, complex<double>>>);
+PYBIND11_MAKE_OPAQUE(
+    vector<pair<pair<long long int, long long int>, complex<double>>>);
 // SZ
 PYBIND11_MAKE_OPAQUE(vector<vector<vector<pair<SZ, complex<double>>>>>);
 PYBIND11_MAKE_OPAQUE(vector<shared_ptr<OpProduct<SZ, complex<double>>>>);
@@ -168,6 +186,9 @@ PYBIND11_MAKE_OPAQUE(
     map<OpNames, shared_ptr<SparseMatrix<SZ, complex<double>>>>);
 PYBIND11_MAKE_OPAQUE(
     unordered_map<string, shared_ptr<SparseMatrix<SZ, complex<double>>>>);
+PYBIND11_MAKE_OPAQUE(
+    vector<
+        unordered_map<string, shared_ptr<SparseMatrix<SZ, complex<double>>>>>);
 PYBIND11_MAKE_OPAQUE(
     vector<map<OpNames, shared_ptr<SparseMatrix<SZ, complex<double>>>>>);
 PYBIND11_MAKE_OPAQUE(
@@ -191,6 +212,9 @@ PYBIND11_MAKE_OPAQUE(
 PYBIND11_MAKE_OPAQUE(
     unordered_map<string, shared_ptr<SparseMatrix<SU2, complex<double>>>>);
 PYBIND11_MAKE_OPAQUE(
+    vector<
+        unordered_map<string, shared_ptr<SparseMatrix<SU2, complex<double>>>>>);
+PYBIND11_MAKE_OPAQUE(
     vector<map<OpNames, shared_ptr<SparseMatrix<SU2, complex<double>>>>>);
 PYBIND11_MAKE_OPAQUE(
     map<shared_ptr<OpExpr<SU2>>, shared_ptr<SparseMatrix<SU2, complex<double>>>,
@@ -213,6 +237,8 @@ PYBIND11_MAKE_OPAQUE(vector<vector<vector<complex<float>>>>);
 PYBIND11_MAKE_OPAQUE(vector<shared_ptr<GTensor<float>>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<shared_ptr<GTensor<float>>>>);
 PYBIND11_MAKE_OPAQUE(vector<shared_ptr<GCSRMatrix<float>>>);
+PYBIND11_MAKE_OPAQUE(vector<pair<pair<int, int>, float>>);
+PYBIND11_MAKE_OPAQUE(vector<pair<pair<long long int, long long int>, float>>);
 // SZ
 PYBIND11_MAKE_OPAQUE(vector<vector<vector<pair<SZ, float>>>>);
 PYBIND11_MAKE_OPAQUE(vector<shared_ptr<OpProduct<SZ, float>>>);
@@ -224,6 +250,8 @@ PYBIND11_MAKE_OPAQUE(vector<shared_ptr<OperatorTensor<SZ, float>>>);
 PYBIND11_MAKE_OPAQUE(map<OpNames, shared_ptr<SparseMatrix<SZ, float>>>);
 PYBIND11_MAKE_OPAQUE(
     unordered_map<string, shared_ptr<SparseMatrix<SZ, float>>>);
+PYBIND11_MAKE_OPAQUE(
+    vector<unordered_map<string, shared_ptr<SparseMatrix<SZ, float>>>>);
 PYBIND11_MAKE_OPAQUE(vector<map<OpNames, shared_ptr<SparseMatrix<SZ, float>>>>);
 PYBIND11_MAKE_OPAQUE(
     map<shared_ptr<OpExpr<SZ>>, shared_ptr<SparseMatrix<SZ, float>>,
@@ -243,6 +271,8 @@ PYBIND11_MAKE_OPAQUE(map<OpNames, shared_ptr<SparseMatrix<SU2, float>>>);
 PYBIND11_MAKE_OPAQUE(
     unordered_map<string, shared_ptr<SparseMatrix<SU2, float>>>);
 PYBIND11_MAKE_OPAQUE(
+    vector<unordered_map<string, shared_ptr<SparseMatrix<SU2, float>>>>);
+PYBIND11_MAKE_OPAQUE(
     vector<map<OpNames, shared_ptr<SparseMatrix<SU2, float>>>>);
 PYBIND11_MAKE_OPAQUE(
     map<shared_ptr<OpExpr<SU2>>, shared_ptr<SparseMatrix<SU2, float>>,
@@ -256,6 +286,9 @@ PYBIND11_MAKE_OPAQUE(
 PYBIND11_MAKE_OPAQUE(vector<shared_ptr<GTensor<complex<float>>>>);
 PYBIND11_MAKE_OPAQUE(vector<vector<shared_ptr<GTensor<complex<float>>>>>);
 PYBIND11_MAKE_OPAQUE(vector<shared_ptr<GCSRMatrix<complex<float>>>>);
+PYBIND11_MAKE_OPAQUE(vector<pair<pair<int, int>, complex<float>>>);
+PYBIND11_MAKE_OPAQUE(
+    vector<pair<pair<long long int, long long int>, complex<float>>>);
 // SZ
 PYBIND11_MAKE_OPAQUE(vector<vector<vector<pair<SZ, complex<float>>>>>);
 PYBIND11_MAKE_OPAQUE(vector<shared_ptr<OpProduct<SZ, complex<float>>>>);
@@ -269,6 +302,9 @@ PYBIND11_MAKE_OPAQUE(
     map<OpNames, shared_ptr<SparseMatrix<SZ, complex<float>>>>);
 PYBIND11_MAKE_OPAQUE(
     unordered_map<string, shared_ptr<SparseMatrix<SZ, complex<float>>>>);
+PYBIND11_MAKE_OPAQUE(
+    vector<
+        unordered_map<string, shared_ptr<SparseMatrix<SZ, complex<float>>>>>);
 PYBIND11_MAKE_OPAQUE(
     vector<map<OpNames, shared_ptr<SparseMatrix<SZ, complex<float>>>>>);
 PYBIND11_MAKE_OPAQUE(
@@ -291,6 +327,9 @@ PYBIND11_MAKE_OPAQUE(
     map<OpNames, shared_ptr<SparseMatrix<SU2, complex<float>>>>);
 PYBIND11_MAKE_OPAQUE(
     unordered_map<string, shared_ptr<SparseMatrix<SU2, complex<float>>>>);
+PYBIND11_MAKE_OPAQUE(
+    vector<
+        unordered_map<string, shared_ptr<SparseMatrix<SU2, complex<float>>>>>);
 PYBIND11_MAKE_OPAQUE(
     vector<map<OpNames, shared_ptr<SparseMatrix<SU2, complex<float>>>>>);
 PYBIND11_MAKE_OPAQUE(
@@ -359,17 +398,15 @@ auto bind_cg(py::module &m) -> decltype(typename S::is_sz_t()) {
     py::class_<CG<S>, shared_ptr<CG<S>>>(m, "CG")
         .def(py::init<>())
         .def(py::init<int>())
-        .def("initialize", [](CG<S> *self) { self->initialize(); })
-        .def("deallocate", &CG<S>::deallocate)
-        .def("wigner_6j", &CG<S>::wigner_6j, py::arg("tja"), py::arg("tjb"),
-             py::arg("tjc"), py::arg("tjd"), py::arg("tje"), py::arg("tjf"))
-        .def("wigner_9j", &CG<S>::wigner_9j, py::arg("tja"), py::arg("tjb"),
-             py::arg("tjc"), py::arg("tjd"), py::arg("tje"), py::arg("tjf"),
-             py::arg("tjg"), py::arg("tjh"), py::arg("tji"))
-        .def("racah", &CG<S>::racah, py::arg("ta"), py::arg("tb"),
-             py::arg("tc"), py::arg("td"), py::arg("te"), py::arg("tf"))
-        .def("transpose_cg", &CG<S>::transpose_cg, py::arg("td"), py::arg("tl"),
-             py::arg("tr"));
+        .def("wigner_6j", &CG<S>::wigner_6j, py::arg("a"), py::arg("b"),
+             py::arg("c"), py::arg("d"), py::arg("e"), py::arg("f"))
+        .def("wigner_9j", &CG<S>::wigner_9j, py::arg("a"), py::arg("b"),
+             py::arg("c"), py::arg("d"), py::arg("e"), py::arg("f"),
+             py::arg("g"), py::arg("h"), py::arg("i"))
+        .def("racah", &CG<S>::racah, py::arg("a"), py::arg("b"), py::arg("c"),
+             py::arg("d"), py::arg("e"), py::arg("f"))
+        .def("transpose_cg", &CG<S>::transpose_cg, py::arg("d"), py::arg("l"),
+             py::arg("r"));
 }
 
 template <typename S>
@@ -377,17 +414,15 @@ auto bind_cg(py::module &m) -> decltype(typename S::is_sg_t()) {
     py::class_<CG<S>, shared_ptr<CG<S>>>(m, "CG")
         .def(py::init<>())
         .def(py::init<int>())
-        .def("initialize", [](CG<S> *self) { self->initialize(); })
-        .def("deallocate", &CG<S>::deallocate)
-        .def("wigner_6j", &CG<S>::wigner_6j, py::arg("tja"), py::arg("tjb"),
-             py::arg("tjc"), py::arg("tjd"), py::arg("tje"), py::arg("tjf"))
-        .def("wigner_9j", &CG<S>::wigner_9j, py::arg("tja"), py::arg("tjb"),
-             py::arg("tjc"), py::arg("tjd"), py::arg("tje"), py::arg("tjf"),
-             py::arg("tjg"), py::arg("tjh"), py::arg("tji"))
-        .def("racah", &CG<S>::racah, py::arg("ta"), py::arg("tb"),
-             py::arg("tc"), py::arg("td"), py::arg("te"), py::arg("tf"))
-        .def("transpose_cg", &CG<S>::transpose_cg, py::arg("td"), py::arg("tl"),
-             py::arg("tr"));
+        .def("wigner_6j", &CG<S>::wigner_6j, py::arg("a"), py::arg("b"),
+             py::arg("c"), py::arg("d"), py::arg("e"), py::arg("f"))
+        .def("wigner_9j", &CG<S>::wigner_9j, py::arg("a"), py::arg("b"),
+             py::arg("c"), py::arg("d"), py::arg("e"), py::arg("f"),
+             py::arg("g"), py::arg("h"), py::arg("i"))
+        .def("racah", &CG<S>::racah, py::arg("a"), py::arg("b"), py::arg("c"),
+             py::arg("d"), py::arg("e"), py::arg("f"))
+        .def("transpose_cg", &CG<S>::transpose_cg, py::arg("d"), py::arg("l"),
+             py::arg("r"));
 }
 
 template <typename S>
@@ -395,8 +430,6 @@ auto bind_cg(py::module &m) -> decltype(typename S::is_su2_t()) {
     py::class_<CG<S>, shared_ptr<CG<S>>>(m, "CG")
         .def(py::init<>())
         .def(py::init<int>())
-        .def("initialize", [](CG<S> *self) { self->initialize(); })
-        .def("deallocate", &CG<S>::deallocate)
         .def_static("triangle", &CG<S>::triangle, py::arg("tja"),
                     py::arg("tjb"), py::arg("tjc"))
         .def("sqrt_delta", &CG<S>::sqrt_delta, py::arg("tja"), py::arg("tjb"),
@@ -405,15 +438,15 @@ auto bind_cg(py::module &m) -> decltype(typename S::is_su2_t()) {
              py::arg("tma"), py::arg("tmb"), py::arg("tmc"))
         .def("wigner_3j", &CG<S>::wigner_3j, py::arg("tja"), py::arg("tjb"),
              py::arg("tjc"), py::arg("tma"), py::arg("tmb"), py::arg("tmc"))
-        .def("wigner_6j", &CG<S>::wigner_6j, py::arg("tja"), py::arg("tjb"),
-             py::arg("tjc"), py::arg("tjd"), py::arg("tje"), py::arg("tjf"))
-        .def("wigner_9j", &CG<S>::wigner_9j, py::arg("tja"), py::arg("tjb"),
-             py::arg("tjc"), py::arg("tjd"), py::arg("tje"), py::arg("tjf"),
-             py::arg("tjg"), py::arg("tjh"), py::arg("tji"))
-        .def("racah", &CG<S>::racah, py::arg("ta"), py::arg("tb"),
-             py::arg("tc"), py::arg("td"), py::arg("te"), py::arg("tf"))
-        .def("transpose_cg", &CG<S>::transpose_cg, py::arg("td"), py::arg("tl"),
-             py::arg("tr"));
+        .def("wigner_6j", &CG<S>::wigner_6j, py::arg("a"), py::arg("b"),
+             py::arg("c"), py::arg("d"), py::arg("e"), py::arg("f"))
+        .def("wigner_9j", &CG<S>::wigner_9j, py::arg("a"), py::arg("b"),
+             py::arg("c"), py::arg("d"), py::arg("e"), py::arg("f"),
+             py::arg("g"), py::arg("h"), py::arg("i"))
+        .def("racah", &CG<S>::racah, py::arg("a"), py::arg("b"), py::arg("c"),
+             py::arg("d"), py::arg("e"), py::arg("f"))
+        .def("transpose_cg", &CG<S>::transpose_cg, py::arg("d"), py::arg("l"),
+             py::arg("r"));
 }
 
 template <typename S> void bind_expr(py::module &m) {
@@ -424,6 +457,14 @@ template <typename S> void bind_expr(py::module &m) {
         .def("__repr__", &OpExpr<S>::to_str);
 
     py::bind_vector<vector<shared_ptr<OpExpr<S>>>>(m, "VectorOpExpr");
+
+    py::class_<OpExprRef<S>, shared_ptr<OpExprRef<S>>, OpExpr<S>>(m,
+                                                                  "OpExprRef");
+
+    py::class_<OpCounter<S>, shared_ptr<OpCounter<S>>, OpExpr<S>>(m,
+                                                                  "OpCounter")
+        .def(py::init<uint64_t>())
+        .def_readwrite("data", &OpCounter<S>::data);
 
     struct PySymbolic : Symbolic<S> {
         using Symbolic<S>::Symbolic;
@@ -706,6 +747,8 @@ template <typename S> void bind_sparse(py::module &m) {
         m, "VectorVectorPLMatInfo");
     py::bind_vector<vector<shared_ptr<SparseMatrixInfo<S>>>>(m,
                                                              "VectorSpMatInfo");
+    py::bind_vector<vector<pair<S, pair<int16_t, int16_t>>>>(
+        m, "VectorPSPInt16Int16");
 }
 
 template <typename S, typename FL> void bind_fl_sparse(py::module &m) {
@@ -816,6 +859,7 @@ template <typename S, typename FL> void bind_fl_sparse(py::module &m) {
         .def("randomize", &SparseMatrix<S, FL>::randomize, py::arg("a") = 0.0,
              py::arg("b") = 1.0)
         .def("normalize", &SparseMatrix<S, FL>::normalize)
+        .def("deep_copy", &SparseMatrix<S, FL>::deep_copy)
         .def("contract", &SparseMatrix<S, FL>::contract, py::arg("lmat"),
              py::arg("rmat"), py::arg("trace_right") = false)
         .def("swap_to_fused_left", &SparseMatrix<S, FL>::swap_to_fused_left)
@@ -901,6 +945,9 @@ template <typename S, typename FL> void bind_fl_sparse(py::module &m) {
         m, "MapOpNamesSpMat");
     py::bind_map<unordered_map<string, shared_ptr<SparseMatrix<S, FL>>>>(
         m, "MapStrSpMat");
+    py::bind_vector<
+        vector<unordered_map<string, shared_ptr<SparseMatrix<S, FL>>>>>(
+        m, "VectorMapStrSpMat");
     py::bind_map<
         unordered_map<shared_ptr<OpExpr<S>>, shared_ptr<SparseMatrix<S, FL>>>>(
         m, "MapOpExprSpMat");
@@ -987,8 +1034,12 @@ template <typename S, typename FL> void bind_fl_operator(py::module &m) {
              &OperatorFunctions<S, FL>::tensor_product_diagonal,
              py::arg("conj"), py::arg("a"), py::arg("b"), py::arg("c"),
              py::arg("opdq"), py::arg("scale") = 1.0)
-        .def("tensor_partial_expectation",
-             &OperatorFunctions<S, FL>::tensor_partial_expectation,
+        .def("tensor_left_partial_expectation",
+             &OperatorFunctions<S, FL>::tensor_left_partial_expectation,
+             py::arg("conj"), py::arg("a"), py::arg("b"), py::arg("c"),
+             py::arg("v"), py::arg("opdq"), py::arg("scale") = 1.0)
+        .def("tensor_right_partial_expectation",
+             &OperatorFunctions<S, FL>::tensor_right_partial_expectation,
              py::arg("conj"), py::arg("a"), py::arg("b"), py::arg("c"),
              py::arg("v"), py::arg("opdq"), py::arg("scale") = 1.0)
         .def("tensor_product_multiply",
@@ -1024,7 +1075,7 @@ template <typename S, typename FL> void bind_fl_operator(py::module &m) {
         .def("deallocate", &OperatorTensor<S, FL>::deallocate)
         .def("copy", &OperatorTensor<S, FL>::copy)
         .def("deep_copy", &OperatorTensor<S, FL>::deep_copy,
-             py::arg("alloc") = nullptr);
+             py::arg("alloc") = nullptr, py::arg("ref_alloc") = nullptr);
 
     py::class_<DelayedOperatorTensor<S, FL>,
                shared_ptr<DelayedOperatorTensor<S, FL>>, OperatorTensor<S, FL>>(
@@ -1066,6 +1117,10 @@ template <typename S, typename FL> void bind_fl_operator(py::module &m) {
              &TensorFunctions<S, FL>::delayed_right_contract)
         .def("left_rotate", &TensorFunctions<S, FL>::left_rotate)
         .def("right_rotate", &TensorFunctions<S, FL>::right_rotate)
+        .def("tensor_product_npdm_fragment",
+             &TensorFunctions<S, FL>::tensor_product_npdm_fragment)
+        .def("tensor_product_expectation",
+             &TensorFunctions<S, FL>::tensor_product_expectation)
         .def("intermediates", &TensorFunctions<S, FL>::intermediates)
         .def("numerical_transform",
              &TensorFunctions<S, FL>::numerical_transform)
@@ -1121,6 +1176,7 @@ template <typename S, typename FL> void bind_fl_hamiltonian(py::module &m) {
         .def("get_site_ops", &Hamiltonian<S, FL>::get_site_ops)
         .def("filter_site_ops", &Hamiltonian<S, FL>::filter_site_ops)
         .def("find_site_op_info", &Hamiltonian<S, FL>::find_site_op_info)
+        .def("get_string_quantum", &Hamiltonian<S, FL>::get_string_quantum)
         .def("deallocate", &Hamiltonian<S, FL>::deallocate);
 }
 
@@ -1287,6 +1343,31 @@ void bind_trans_state_info_spin_specific(py::module &m,
           &TransStateInfo<T, S>::backward_connection);
 }
 
+template <typename T, int L>
+void bind_array_fixed(py::module &m, const string &name) {
+
+    py::class_<array<T, L>>(m, name.c_str())
+        .def("__setitem__",
+             [](array<T, L> *self, size_t i, int t) { (*self)[i] = t; })
+        .def("__getitem__",
+             [](array<T, L> *self, size_t i) { return (*self)[i]; })
+        .def("__len__", [](array<T, L> *self) { return self->size(); })
+        .def("__repr__",
+             [](array<T, L> *self) {
+                 stringstream ss;
+                 ss << "(LEN=" << self->size() << ")[";
+                 for (auto x : *self)
+                     ss << x << ",";
+                 ss << "]";
+                 return ss.str();
+             })
+        .def("__iter__", [](array<T, L> *self) {
+            return py::make_iterator<
+                py::return_value_policy::reference_internal, T *, T *, T &>(
+                &(*self)[0], &(*self)[0] + self->size());
+        });
+}
+
 template <typename S = void> void bind_data(py::module &m) {
 
     py::bind_vector<vector<int>>(m, "VectorInt");
@@ -1296,12 +1377,15 @@ template <typename S = void> void bind_data(py::module &m) {
     py::bind_vector<vector<pair<long long int, int>>>(m, "VectorPLLIntInt");
     py::bind_vector<vector<pair<long long int, long long int>>>(
         m, "VectorPLLIntLLInt");
+    py::bind_vector<vector<pair<unsigned long, unsigned long>>>(
+        m, "VectorPULIntULInt");
     py::bind_vector<vector<int16_t>>(m, "VectorInt16");
     py::bind_vector<vector<uint16_t>>(m, "VectorUInt16");
     py::bind_vector<vector<uint32_t>>(m, "VectorUInt32");
     py::bind_vector<vector<double>>(m, "VectorDouble");
     py::bind_vector<vector<long double>>(m, "VectorLDouble");
     py::bind_vector<vector<complex<double>>>(m, "VectorComplexDouble");
+    py::bind_vector<vector<complex<long double>>>(m, "VectorComplexLDouble");
     py::bind_vector<vector<size_t>>(m, "VectorULInt");
     py::bind_vector<vector<string>>(m, "VectorString");
     py::bind_vector<vector<vector<uint8_t>>>(m, "VectorVectorUInt8");
@@ -1311,11 +1395,15 @@ template <typename S = void> void bind_data(py::module &m) {
     py::bind_vector<vector<vector<long double>>>(m, "VectorVectorLDouble");
     py::bind_vector<vector<vector<complex<double>>>>(
         m, "VectorVectorComplexDouble");
+    py::bind_vector<vector<vector<complex<long double>>>>(
+        m, "VectorVectorComplexLDouble");
     py::bind_vector<vector<vector<int>>>(m, "VectorVectorInt");
     py::bind_vector<vector<vector<vector<double>>>>(m,
                                                     "VectorVectorVectorDouble");
     py::bind_vector<vector<vector<vector<complex<double>>>>>(
         m, "VectorVectorVectorComplexDouble");
+    py::bind_vector<vector<vector<vector<complex<long double>>>>>(
+        m, "VectorVectorVectorComplexLDouble");
     py::bind_map<unordered_map<int, int>>(m, "MapIntInt");
     py::bind_vector<vector<unordered_map<int, int>>>(m, "VectorMapIntInt");
     py::bind_map<unordered_map<int, pair<int, int>>>(m, "MapIntPIntInt");
@@ -1355,51 +1443,13 @@ template <typename S = void> void bind_data(py::module &m) {
             return ss.str();
         });
 
-    py::class_<array<int, 4>>(m, "Array4Int")
-        .def("__setitem__",
-             [](array<int, 4> *self, size_t i, int t) { (*self)[i] = t; })
-        .def("__getitem__",
-             [](array<int, 4> *self, size_t i) { return (*self)[i]; })
-        .def("__len__", [](array<int, 4> *self) { return self->size(); })
-        .def("__repr__",
-             [](array<int, 4> *self) {
-                 stringstream ss;
-                 ss << "(LEN=" << self->size() << ")[";
-                 for (auto x : *self)
-                     ss << x << ",";
-                 ss << "]";
-                 return ss.str();
-             })
-        .def("__iter__", [](array<int, 4> *self) {
-            return py::make_iterator<
-                py::return_value_policy::reference_internal, int *, int *,
-                int &>(&(*self)[0], &(*self)[0] + self->size());
-        });
+    bind_array_fixed<int, 4>(m, "Array4Int");
+    bind_array_fixed<int16_t, 3>(m, "Array3Int16");
+    bind_array_fixed<int16_t, 6>(m, "Array6Int16");
 
     py::bind_vector<vector<array<int, 4>>>(m, "VectorArray4Int");
-
-    py::class_<array<int16_t, 3>>(m, "Array3Int16")
-        .def("__setitem__",
-             [](array<int16_t, 3> *self, size_t i, int t) { (*self)[i] = t; })
-        .def("__getitem__",
-             [](array<int16_t, 3> *self, size_t i) { return (*self)[i]; })
-        .def("__len__", [](array<int, 4> *self) { return self->size(); })
-        .def("__repr__",
-             [](array<int16_t, 3> *self) {
-                 stringstream ss;
-                 ss << "(LEN=" << self->size() << ")[";
-                 for (auto x : *self)
-                     ss << x << ",";
-                 ss << "]";
-                 return ss.str();
-             })
-        .def("__iter__", [](array<int16_t, 3> *self) {
-            return py::make_iterator<
-                py::return_value_policy::reference_internal, int16_t *,
-                int16_t *, int16_t &>(&(*self)[0], &(*self)[0] + self->size());
-        });
-
     py::bind_vector<vector<array<int16_t, 3>>>(m, "VectorArray3Int16");
+    py::bind_vector<vector<array<int16_t, 6>>>(m, "VectorArray6Int16");
 
     bind_array<uint8_t>(m, "ArrayUInt8")
         .def("__str__", [](Array<uint8_t> *self) {
@@ -1443,6 +1493,8 @@ template <typename S = void> void bind_data(py::module &m) {
         }));
     py::bind_vector<vector<map<string, string>>>(m, "VectorMapStrStr");
     py::bind_vector<vector<pair<string, string>>>(m, "VectorPStrStr");
+    py::bind_vector<vector<pair<string, int8_t>>>(m, "VectorPStrInt8");
+    py::bind_map<map<pair<string, int8_t>, int>>(m, "MapPStrInt8Int");
 }
 
 template <typename S = void> void bind_types(py::module &m) {
@@ -1517,7 +1569,9 @@ template <typename S = void> void bind_types(py::module &m) {
         .value("Prod", OpTypes::Prod)
         .value("Sum", OpTypes::Sum)
         .value("ElemRef", OpTypes::ElemRef)
-        .value("SumProd", OpTypes::SumProd);
+        .value("SumProd", OpTypes::SumProd)
+        .value("ExprRef", OpTypes::ExprRef)
+        .value("Counter", OpTypes::Counter);
 
     py::enum_<NoiseTypes>(m, "NoiseTypes", py::arithmetic())
         .value("Nothing", NoiseTypes::None)
@@ -1943,8 +1997,14 @@ template <typename S = void> void bind_io(py::module &m) {
     py::class_<SU2CG, shared_ptr<SU2CG>>(m, "SU2CG")
         .def(py::init<>())
         .def(py::init<int>())
-        .def("initialize", [](SU2CG *self) { self->initialize(); })
-        .def("deallocate", &SU2CG::deallocate)
+        .def_static("triangle", &SU2CG::triangle, py::arg("tja"),
+                    py::arg("tjb"), py::arg("tjc"))
+        .def("sqrt_delta", &SU2CG::sqrt_delta, py::arg("tja"), py::arg("tjb"),
+             py::arg("tjc"))
+        .def("cg", &SU2CG::cg, py::arg("tja"), py::arg("tjb"), py::arg("tjc"),
+             py::arg("tma"), py::arg("tmb"), py::arg("tmc"))
+        .def("wigner_3j", &SU2CG::wigner_3j, py::arg("tja"), py::arg("tjb"),
+             py::arg("tjc"), py::arg("tma"), py::arg("tmb"), py::arg("tmc"))
         .def("wigner_6j", &SU2CG::wigner_6j, py::arg("tja"), py::arg("tjb"),
              py::arg("tjc"), py::arg("tjd"), py::arg("tje"), py::arg("tjf"))
         .def("wigner_9j", &SU2CG::wigner_9j, py::arg("tja"), py::arg("tjb"),
@@ -1953,7 +2013,9 @@ template <typename S = void> void bind_io(py::module &m) {
         .def("racah", &SU2CG::racah, py::arg("ta"), py::arg("tb"),
              py::arg("tc"), py::arg("td"), py::arg("te"), py::arg("tf"))
         .def("transpose_cg", &SU2CG::transpose_cg, py::arg("td"), py::arg("tl"),
-             py::arg("tr"));
+             py::arg("tr"))
+        .def("phase", &SU2CG::phase, py::arg("ta"), py::arg("tb"),
+             py::arg("tc"));
 
     py::class_<SpinPermTerm, shared_ptr<SpinPermTerm>>(m, "SpinPermTerm")
         .def(py::init<>())
@@ -1983,12 +2045,16 @@ template <typename S = void> void bind_io(py::module &m) {
         .def_static("D", &SpinPermTensor::D)
         .def_static("T", &SpinPermTensor::T)
         .def_static("permutation_parity", &SpinPermTensor::permutation_parity)
+        .def_static("find_pattern_perm", &SpinPermTensor::find_pattern_perm)
         .def_static("auto_sort_string", &SpinPermTensor::auto_sort_string)
         .def_static("mul", &SpinPermTensor::mul)
+        .def_static("dot_product", &SpinPermTensor::dot_product)
         .def("simplify", &SpinPermTensor::simplify)
         .def("auto_sort", &SpinPermTensor::auto_sort)
+        .def("get_cds", &SpinPermTensor::get_cds)
         .def("equal_to_scaled", &SpinPermTensor::equal_to_scaled)
         .def("to_str", &SpinPermTensor::to_str)
+        .def("__repr__", [](SpinPermTensor *self) { return self->to_str(); })
         .def(py::self * double())
         .def(py::self + py::self)
         .def(py::self == py::self);
@@ -2000,26 +2066,53 @@ template <typename S = void> void bind_io(py::module &m) {
         .def_static("to_str", &SpinPermRecoupling::to_str)
         .def_static("make_cds", &SpinPermRecoupling::make_cds)
         .def_static("make_with_cds", &SpinPermRecoupling::make_with_cds)
+        .def_static("get_target_twos", &SpinPermRecoupling::get_target_twos)
         .def_static("split_cds", &SpinPermRecoupling::split_cds)
         .def_static("count_cds", &SpinPermRecoupling::count_cds)
         .def_static("make_tensor", &SpinPermRecoupling::make_tensor)
+        .def_static("get_sub_expr", &SpinPermRecoupling::get_sub_expr)
         .def_static("find_split_index", &SpinPermRecoupling::find_split_index)
         .def_static("find_split_indices_from_left",
-                    &SpinPermRecoupling::find_split_indices_from_left)
+                    &SpinPermRecoupling::find_split_indices_from_left,
+                    py::arg("x"), py::arg("start_depth") = 1)
+        .def_static("find_split_indices_from_right",
+                    &SpinPermRecoupling::find_split_indices_from_right,
+                    py::arg("x"), py::arg("start_depth") = 1)
         .def_static("initialize", &SpinPermRecoupling::initialize, py::arg("n"),
                     py::arg("twos"), py::arg("site_dq") = 1);
+
+    py::class_<SpinRecoupling, shared_ptr<SpinRecoupling>>(m, "SpinRecoupling")
+        .def_static("get_level", &SpinRecoupling::get_level)
+        .def_static("get_twos", &SpinRecoupling::get_twos)
+        .def_static("recouple", &SpinRecoupling::recouple)
+        .def_static("recouple_split", &SpinRecoupling::recouple_split);
+
+    py::class_<typename SpinRecoupling::Level,
+               shared_ptr<typename SpinRecoupling::Level>>(
+        m, "SpinRecouplingLevel")
+        .def(py::init<>())
+        .def_readwrite("left_idx", &SpinRecoupling::Level::left_idx)
+        .def_readwrite("mid_idx", &SpinRecoupling::Level::mid_idx)
+        .def_readwrite("right_idx", &SpinRecoupling::Level::right_idx)
+        .def_readwrite("left_cnt", &SpinRecoupling::Level::left_cnt)
+        .def_readwrite("right_cnt", &SpinRecoupling::Level::right_cnt);
 
     py::class_<SpinPermPattern, shared_ptr<SpinPermPattern>>(m,
                                                              "SpinPermPattern")
         .def_readwrite("n", &SpinPermPattern::n)
+        .def_readwrite("mask", &SpinPermPattern::mask)
         .def_readwrite("data", &SpinPermPattern::data)
         .def(py::init<uint16_t>())
-        .def_static("all_reordering", &SpinPermPattern::all_reordering)
-        .def_static("initialize", &SpinPermPattern::initialize)
+        .def(py::init<uint16_t, const vector<uint16_t> &>())
+        .def_static("all_reordering", &SpinPermPattern::all_reordering,
+                    py::arg("x"), py::arg("mask") = vector<uint16_t>())
+        .def_static("initialize", &SpinPermPattern::initialize, py::arg("n"),
+                    py::arg("mask") = vector<uint16_t>())
         .def_static("get_unique", &SpinPermPattern::get_unique)
         .def_static("make_matrix", &SpinPermPattern::make_matrix)
         .def("count", &SpinPermPattern::count)
         .def("__getitem__", &SpinPermPattern::operator[])
+        .def("get_split_index", &SpinPermPattern::get_split_index)
         .def("to_str", &SpinPermPattern::to_str);
 
     py::class_<SpinPermScheme, shared_ptr<SpinPermScheme>>(m, "SpinPermScheme")
@@ -2027,14 +2120,63 @@ template <typename S = void> void bind_io(py::module &m) {
         .def(py::init<string>())
         .def(py::init<string, bool>())
         .def(py::init<string, bool, bool>())
+        .def(py::init<string, bool, bool, bool>())
+        .def(py::init<string, bool, bool, bool, bool>())
         .def_readwrite("index_patterns", &SpinPermScheme::index_patterns)
         .def_readwrite("data", &SpinPermScheme::data)
-        .def_static("initialize_sz", &SpinPermScheme::initialize_sz)
-        .def_static("initialize_su2", &SpinPermScheme::initialize_su2)
+        .def_readwrite("is_su2", &SpinPermScheme::is_su2)
+        .def_readwrite("left_vacuum", &SpinPermScheme::left_vacuum)
+        .def_readwrite("mask", &SpinPermScheme::mask)
+        .def_static("initialize_sz", &SpinPermScheme::initialize_sz,
+                    py::arg("nn"), py::arg("spin_str"),
+                    py::arg("is_fermion") = true,
+                    py::arg("mask") = vector<uint16_t>())
+        .def_static("initialize_su2_old", &SpinPermScheme::initialize_su2_old,
+                    py::arg("nn"), py::arg("spin_str"),
+                    py::arg("is_npdm") = false)
+        .def_static("initialize_su2", &SpinPermScheme::initialize_su2,
+                    py::arg("nn"), py::arg("spin_str"),
+                    py::arg("is_npdm") = false, py::arg("is_drt") = false,
+                    py::arg("mask") = vector<uint16_t>())
         .def("to_str", &SpinPermScheme::to_str);
 
     py::bind_vector<vector<shared_ptr<SpinPermScheme>>>(m,
                                                         "VectorSpinPermScheme");
+
+    py::class_<NPDMCounter, shared_ptr<NPDMCounter>>(m, "NPDMCounter")
+        .def(py::init<int, int>())
+        .def_readwrite("n_ops", &NPDMCounter::n_ops)
+        .def_readwrite("n_sites", &NPDMCounter::n_sites)
+        .def_readwrite("dp", &NPDMCounter::dp)
+        .def("count_left", &NPDMCounter::count_left)
+        .def("init_left", &NPDMCounter::init_left)
+        .def("next_left", &NPDMCounter::next_left)
+        .def("find_left", &NPDMCounter::find_left)
+        .def("count_right", &NPDMCounter::count_right)
+        .def("init_right", &NPDMCounter::init_right)
+        .def("index_right", &NPDMCounter::index_right)
+        .def("next_right", &NPDMCounter::next_right);
+
+    py::class_<NPDMScheme, shared_ptr<NPDMScheme>>(m, "NPDMScheme")
+        .def(py::init<shared_ptr<SpinPermScheme>>())
+        .def(py::init<const vector<shared_ptr<SpinPermScheme>> &>())
+        .def_readwrite("left_terms", &NPDMScheme::left_terms)
+        .def_readwrite("right_terms", &NPDMScheme::right_terms)
+        .def_readwrite("middle_terms", &NPDMScheme::middle_terms)
+        .def_readwrite("middle_perm_patterns",
+                       &NPDMScheme::middle_perm_patterns)
+        .def_readwrite("left_blocking", &NPDMScheme::left_blocking)
+        .def_readwrite("right_blocking", &NPDMScheme::right_blocking)
+        .def_readwrite("middle_blocking", &NPDMScheme::middle_blocking)
+        .def_readwrite("last_right_terms", &NPDMScheme::last_right_terms)
+        .def_readwrite("last_right_blocking", &NPDMScheme::last_right_blocking)
+        .def_readwrite("last_middle_blocking",
+                       &NPDMScheme::last_middle_blocking)
+        .def_readwrite("local_terms", &NPDMScheme::local_terms)
+        .def_readwrite("perms", &NPDMScheme::perms)
+        .def_readwrite("n_max_ops", &NPDMScheme::n_max_ops)
+        .def("initialize", &NPDMScheme::initialize)
+        .def("to_str", &NPDMScheme::to_str);
 }
 
 template <typename FL> void bind_fl_io(py::module &m, const string &name) {
@@ -2073,8 +2215,13 @@ template <typename FL> void bind_fl_io(py::module &m, const string &name) {
         .def_readwrite("used", &StackAllocator<FL>::used)
         .def_readwrite("shift", &StackAllocator<FL>::shift);
 
+    py::class_<TemporaryAllocator<FL>, shared_ptr<TemporaryAllocator<FL>>,
+               StackAllocator<FL>>(m, (name + "TemporaryAllocator").c_str())
+        .def(py::init<>());
+
     py::class_<FPCodec<FL>, shared_ptr<FPCodec<FL>>>(m,
                                                      (name + "FPCodec").c_str())
+        .def(py::init<>())
         .def(py::init<FL>())
         .def(py::init<FL, size_t>())
         .def_readwrite("ndata", &FPCodec<FL>::ndata)
@@ -2141,7 +2288,7 @@ template <typename FL> void bind_fl_io(py::module &m, const string &name) {
         .def("load", [](FPCodec<FL> *self, const string &filename) {
             ifstream ifs(filename.c_str(), ios::binary);
             if (!ifs.good())
-                throw runtime_error("FPCodec::load_data on '" + filename +
+                throw runtime_error("FPCodec::load on '" + filename +
                                     "' failed.");
             size_t arr_len;
             ifs >> arr_len;
@@ -2519,21 +2666,49 @@ template <typename FL> void bind_fl_matrix(py::module &m) {
                                                      py::buffer_protocol())
         .def(py::init<MKL_INT, MKL_INT, MKL_INT>())
         .def(py::init<const vector<MKL_INT> &>())
+        .def(py::init<>())
         .def_buffer([](GTensor<FL> *self) -> py::buffer_info {
             vector<ssize_t> shape, strides;
             for (auto x : self->shape)
                 shape.push_back(x);
-            strides.push_back(sizeof(FL));
-            for (int i = (int)shape.size() - 1; i > 0; i--)
-                strides.push_back(strides.back() * shape[i]);
-            reverse(strides.begin(), strides.end());
-            return py::buffer_info(&self->data[0], sizeof(FL),
+            if (shape.size() != 0) {
+                strides.push_back(sizeof(FL));
+                for (int i = (int)shape.size() - 1; i > 0; i--)
+                    strides.push_back(strides.back() * shape[i]);
+                reverse(strides.begin(), strides.end());
+            }
+            return py::buffer_info(&(*self->data)[0], sizeof(FL),
                                    py::format_descriptor<FL>::format(),
                                    shape.size(), shape, strides);
         })
         .def_readwrite("shape", &GTensor<FL>::shape)
         .def_readwrite("data", &GTensor<FL>::data)
         .def_property_readonly("ref", &GTensor<FL>::ref)
+        .def("save",
+             [](GTensor<FL> *self, const string &filename) {
+                 ofstream ofs(filename.c_str(), ios::binary);
+                 if (!ofs.good())
+                     throw runtime_error("GTensor::save on '" + filename +
+                                         "' failed.");
+                 self->write_array(ofs);
+                 if (!ofs.good())
+                     throw runtime_error("GTensor::save on '" + filename +
+                                         "' failed.");
+                 ofs.close();
+             })
+        .def("load",
+             [](GTensor<FL> *self, const string &filename) {
+                 ifstream ifs(filename.c_str(), ios::binary);
+                 if (!ifs.good())
+                     throw runtime_error("GTensor::load on '" + filename +
+                                         "' failed.");
+                 self->read_array(ifs);
+                 if (ifs.fail() || ifs.bad())
+                     throw runtime_error("GTensor::load on '" + filename +
+                                         "' failed.");
+                 ifs.close();
+                 return self;
+             })
         .def("__repr__", [](GTensor<FL> *self) {
             stringstream ss;
             ss << *self;
@@ -2543,6 +2718,15 @@ template <typename FL> void bind_fl_matrix(py::module &m) {
     py::bind_vector<vector<shared_ptr<GTensor<FL>>>>(m, "VectorTensor");
     py::bind_vector<vector<vector<shared_ptr<GTensor<FL>>>>>(
         m, "VectorVectorTensor");
+
+    py::bind_vector<vector<pair<pair<int, int>, FL>>>(m, "VectorPPIntFL");
+    py::bind_vector<vector<pair<pair<long long int, long long int>, FL>>>(
+        m, "VectorPPLLIntFL");
+
+    if (sizeof(MKL_INT) == sizeof(int))
+        m.attr("VectorPPMKLIntFL") = m.attr("VectorPPIntFL");
+    else if (sizeof(MKL_INT) == sizeof(long long int))
+        m.attr("VectorPPMKLIntFL") = m.attr("VectorPPLLIntFL");
 
     py::class_<GCSRMatrixFunctions<FL>>(m, "CSRMatrixFunctions");
 
@@ -2661,10 +2845,13 @@ template <typename FL> void bind_fl_matrix(py::module &m) {
         .def("det_energy", &FCIDUMP<FL>::det_energy)
         .def("exchange_matrix", &FCIDUMP<FL>::exchange_matrix)
         .def("abs_exchange_matrix", &FCIDUMP<FL>::abs_exchange_matrix)
-        .def("h1e_matrix", &FCIDUMP<FL>::h1e_matrix)
-        .def("g2e_1fold", &FCIDUMP<FL>::g2e_1fold)
-        .def("g2e_4fold", &FCIDUMP<FL>::g2e_4fold)
-        .def("g2e_8fold", &FCIDUMP<FL>::g2e_8fold)
+        .def("h1e_matrix", &FCIDUMP<FL>::h1e_matrix, py::arg("s") = -1)
+        .def("g2e_1fold", &FCIDUMP<FL>::g2e_1fold, py::arg("sl") = -1,
+             py::arg("sr") = -1)
+        .def("g2e_4fold", &FCIDUMP<FL>::g2e_4fold, py::arg("sl") = -1,
+             py::arg("sr") = -1)
+        .def("g2e_8fold", &FCIDUMP<FL>::g2e_8fold, py::arg("sl") = -1,
+             py::arg("sr") = -1)
         .def("abs_h1e_matrix", &FCIDUMP<FL>::abs_h1e_matrix)
         .def("reorder", (void(FCIDUMP<FL>::*)(const vector<uint16_t> &)) &
                             FCIDUMP<FL>::reorder)
@@ -2694,7 +2881,8 @@ template <typename FL> void bind_fl_matrix(py::module &m) {
         .def_readwrite("vgs", &FCIDUMP<FL>::vgs)
         .def_readwrite("const_e", &FCIDUMP<FL>::const_e)
         .def_readwrite("total_memory", &FCIDUMP<FL>::total_memory)
-        .def_readwrite("uhf", &FCIDUMP<FL>::uhf);
+        .def_readwrite("uhf", &FCIDUMP<FL>::uhf)
+        .def_readwrite("general", &FCIDUMP<FL>::general);
 
     py::class_<CompressedFCIDUMP<FL>, shared_ptr<CompressedFCIDUMP<FL>>,
                FCIDUMP<FL>>(m, "CompressedFCIDUMP")
@@ -2990,6 +3178,7 @@ template <typename S = void> void bind_symmetry(py::module &m) {
         .def("__repr__", &SZ::to_str);
 
     py::bind_vector<vector<SZ>>(m, "VectorSZ");
+    py::bind_vector<vector<vector<SZ>>>(m, "VectorVectorSZ");
 
     py::class_<SU2>(m, "SU2")
         .def(py::init<>())
@@ -3025,6 +3214,7 @@ template <typename S = void> void bind_symmetry(py::module &m) {
         .def("__repr__", &SU2::to_str);
 
     py::bind_vector<vector<SU2>>(m, "VectorSU2");
+    py::bind_vector<vector<vector<SU2>>>(m, "VectorVectorSU2");
 
     py::class_<SGF>(m, "SGF")
         .def(py::init<>())
@@ -3059,6 +3249,7 @@ template <typename S = void> void bind_symmetry(py::module &m) {
         .def("__repr__", &SGF::to_str);
 
     py::bind_vector<vector<SGF>>(m, "VectorSGF");
+    py::bind_vector<vector<vector<SGF>>>(m, "VectorVectorSGF");
 
     py::class_<SGB>(m, "SGB")
         .def(py::init<>())
@@ -3093,6 +3284,7 @@ template <typename S = void> void bind_symmetry(py::module &m) {
         .def("__repr__", &SGB::to_str);
 
     py::bind_vector<vector<SGB>>(m, "VectorSGB");
+    py::bind_vector<vector<vector<SGB>>>(m, "VectorVectorSGB");
 
     py::class_<SZK>(m, "SZK")
         .def(py::init<>())
@@ -3130,6 +3322,7 @@ template <typename S = void> void bind_symmetry(py::module &m) {
         .def("__repr__", &SZK::to_str);
 
     py::bind_vector<vector<SZK>>(m, "VectorSZK");
+    py::bind_vector<vector<vector<SZK>>>(m, "VectorVectorSZK");
 
     py::class_<SU2K>(m, "SU2K")
         .def(py::init<>())
@@ -3169,6 +3362,7 @@ template <typename S = void> void bind_symmetry(py::module &m) {
         .def("__repr__", &SU2K::to_str);
 
     py::bind_vector<vector<SU2K>>(m, "VectorSU2K");
+    py::bind_vector<vector<vector<SU2K>>>(m, "VectorVectorSU2K");
 }
 
 #ifdef _EXPLICIT_TEMPLATE

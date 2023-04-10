@@ -210,6 +210,7 @@ TYPED_TEST(TestComplexMatrix, TestRotate) {
         GMatrix<FL> a(dalloc_<FP>()->complex_allocate(nb * mk), nb, mk);
         GMatrix<FL> c(dalloc_<FP>()->complex_allocate(mb * nk), mb, nk);
         GMatrix<FL> ba(dalloc_<FP>()->complex_allocate(mb * mk), mb, mk);
+        GMatrix<FL> bc(dalloc_<FP>()->complex_allocate(nb * nk), nb, nk);
         Random::complex_fill<FP>(k.data, k.size());
         Random::complex_fill<FP>(b.data, b.size());
         Random::complex_fill<FP>(a.data, a.size());
@@ -267,11 +268,6 @@ TYPED_TEST(TestComplexMatrix, TestRotate) {
             c.clear();
             seq->rotate(a, c, tb, conjb, tk, conjk, FL(2.0, 1.0));
             seq->simple_perform();
-            ba.clear();
-            for (MKL_INT jb = 0; jb < nb; jb++)
-                for (MKL_INT ib = 0; ib < mb; ib++)
-                    for (MKL_INT ja = 0; ja < mk; ja++)
-                        ba(ib, ja) += b(ib, jb) * a(jb, ja) * FL(2.0, 1.0);
             for (MKL_INT ib = 0; ib < mb; ib++)
                 for (MKL_INT jk = 0; jk < nk; jk++) {
                     FL x = 0;
@@ -302,7 +298,8 @@ TYPED_TEST(TestComplexMatrix, TestRotate) {
             tc = GMatrix<FL>(dalloc_<FP>()->complex_allocate(mb * nk), nk, mb);
             tc.clear();
         }
-        GMatrixFunctions<FL>::rotate(ta, conja, tc, conjc, tb, k, FL(2.0, 1.0));
+        GMatrixFunctions<FL>::left_partial_rotate(ta, conja, tc, conjc, tb, k,
+                                                  FL(2.0, 1.0));
         if (conjc) {
             for (MKL_INT ic = 0; ic < mb; ic++)
                 for (MKL_INT jc = 0; jc < nk; jc++)
@@ -322,7 +319,7 @@ TYPED_TEST(TestComplexMatrix, TestRotate) {
             tc = GMatrix<FL>(dalloc_<FP>()->complex_allocate(mb * nk), nk, mb);
             tc.clear();
         }
-        seq->rotate(ta, conja, tc, conjc, tb, k, FL(2.0, 1.0));
+        seq->left_partial_rotate(ta, conja, tc, conjc, tb, k, FL(2.0, 1.0));
         seq->simple_perform();
         if (conjc) {
             for (MKL_INT ic = 0; ic < mb; ic++)
@@ -340,7 +337,64 @@ TYPED_TEST(TestComplexMatrix, TestRotate) {
             tc.deallocate();
         if (conja)
             ta.deallocate();
+        Random::complex_fill<FP>(c.data, c.size());
+        bc.clear();
+        for (MKL_INT jb = 0; jb < nb; jb++)
+            for (MKL_INT ib = 0; ib < mb; ib++)
+                for (MKL_INT jc = 0; jc < nk; jc++)
+                    bc(jb, jc) += b(ib, jb) * c(ib, jc) * FL(2.0, 1.0);
+        if (conjc) {
+            tc = GMatrix<FL>(dalloc_<FP>()->complex_allocate(mb * nk), nk, mb);
+            for (MKL_INT ic = 0; ic < nk; ic++)
+                for (MKL_INT jc = 0; jc < mb; jc++)
+                    tc(ic, jc) = conj(c(jc, ic));
+        }
+        a.clear();
+        if (conja) {
+            ta = GMatrix<FL>(dalloc_<FP>()->complex_allocate(mk * nb), mk, nb);
+            ta.clear();
+        }
+        GMatrixFunctions<FL>::right_partial_rotate(tc, conjc, ta, conja, tb, k,
+                                                   FL(2.0, 1.0));
+        if (conja) {
+            for (MKL_INT ia = 0; ia < nb; ia++)
+                for (MKL_INT ja = 0; ja < mk; ja++)
+                    a(ia, ja) = conj(ta(ja, ia));
+        }
+        for (MKL_INT ib = 0; ib < nb; ib++)
+            for (MKL_INT jk = 0; jk < mk; jk++) {
+                FL x = 0;
+                for (MKL_INT ik = 0; ik < nk; ik++)
+                    x += bc(ib, ik) * k(jk, ik);
+                ASSERT_LT(abs(x - a(ib, jk)), thrd);
+            }
+        if (conja)
+            ta.deallocate();
+        a.clear();
+        if (conja) {
+            ta = GMatrix<FL>(dalloc_<FP>()->complex_allocate(mk * nb), mk, nb);
+            ta.clear();
+        }
+        seq->right_partial_rotate(tc, conjc, ta, conja, tb, k, FL(2.0, 1.0));
+        seq->simple_perform();
+        if (conja) {
+            for (MKL_INT ia = 0; ia < nb; ia++)
+                for (MKL_INT ja = 0; ja < mk; ja++)
+                    a(ia, ja) = conj(ta(ja, ia));
+        }
+        for (MKL_INT ib = 0; ib < nb; ib++)
+            for (MKL_INT jk = 0; jk < mk; jk++) {
+                FL x = 0;
+                for (MKL_INT ik = 0; ik < nk; ik++)
+                    x += bc(ib, ik) * k(jk, ik);
+                ASSERT_LT(abs(x - a(ib, jk)), thrd);
+            }
+        if (conja)
+            ta.deallocate();
+        if (conjc)
+            tc.deallocate();
         tb.deallocate();
+        bc.deallocate();
         ba.deallocate();
         c.deallocate();
         a.deallocate();
@@ -1131,7 +1185,7 @@ TYPED_TEST(TestComplexMatrix, TestSVD) {
             make_shared<GTensor<FL>>(vector<MKL_INT>{m, m});
         shared_ptr<GTensor<FL>> rr =
             make_shared<GTensor<FL>>(vector<MKL_INT>{n, n});
-        Random::complex_fill<FP>(a->data.data(), a->size());
+        Random::complex_fill<FP>(a->data->data(), a->size());
         GMatrixFunctions<FL>::copy(aa->ref(), a->ref());
         if (Random::rand_int(0, 2))
             GMatrixFunctions<FL>::accurate_svd(
@@ -1159,7 +1213,7 @@ TYPED_TEST(TestComplexMatrix, TestSVD) {
             ASSERT_TRUE(GMatrixFunctions<FL>::all_close(
                 rr->ref(), IdentityMatrix(n), thrd, thrd2));
         }
-        GMatrix<FL> x(r->data.data(), 1, n);
+        GMatrix<FL> x(r->data->data(), 1, n);
         for (MKL_INT i = 0; i < k; i++) {
             ASSERT_GE((*s)({i}), 0.0);
             GMatrixFunctions<FL>::iscale(x.shift_ptr(i * n), (*s)({i}));
@@ -1201,7 +1255,7 @@ TYPED_TEST(TestComplexMatrix, TestDisjointSVD) {
         a->clear();
         for (size_t i = 0; i < nnz; i++)
             Random::complex_fill<FP>(
-                &a->data[Random::rand_int(0, (int)a->size())], 1);
+                &(*a->data)[Random::rand_int(0, (int)a->size())], 1);
         GMatrixFunctions<FL>::copy(aa->ref(), a->ref());
         vector<FP> levels{0.6, 0.3};
         levels.resize(Random::rand_int(0, (int)levels.size() + 1));
@@ -1229,7 +1283,7 @@ TYPED_TEST(TestComplexMatrix, TestDisjointSVD) {
                     rr->ref(), IdentityMatrix(n), thrd, thrd2));
             }
         }
-        GMatrix<FL> x(r->data.data(), 1, n);
+        GMatrix<FL> x(r->data->data(), 1, n);
         for (MKL_INT i = 0; i < k; i++) {
             ASSERT_GE((*s)({i}), 0.0);
             GMatrixFunctions<FL>::iscale(x.shift_ptr(i * n), (*s)({i}));

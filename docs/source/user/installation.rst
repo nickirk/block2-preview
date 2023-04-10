@@ -15,11 +15,11 @@ One can install ``block2`` using ``pip``:
 
       pip install block2
 
-* Hybrid openMP/MPI version (requiring openMPI 4.0.x and ``mpi4py`` based on the same openMPI library installed) ::
+* Hybrid openMP/MPI version (requiring openMPI 4.0.x) ::
 
       pip install block2-mpi
 
-* Binary format are prepared via ``pip`` for python 3.6, 3.7, 3.8, and 3.9 with macOS (no-MPI) or Linux (no-MPI/openMPI).
+* Binary format are prepared via ``pip`` for python 3.7, 3.8, 3.9, and 3.10 with macOS (x86 and arm64, no-MPI) or Linux (no-MPI/openMPI).
   If these binaries have some problems, you can use the ``--no-binary`` option of ``pip`` to force building from source
   (for example, ``pip install block2 --no-binary block2``).
 
@@ -28,7 +28,7 @@ One can install ``block2`` using ``pip``:
   Some guidance for resolving environment problems can be found in github issue
   `#7 <https://github.com/block-hczhai/block2-preview/issues/7>`_.
 
-* To install the most recent development version, use:
+* To install the most recent development version, use: ::
 
       pip install block2 --extra-index-url=https://block-hczhai.github.io/block2-preview/pypi/
       pip install block2-mpi --extra-index-url=https://block-hczhai.github.io/block2-preview/pypi/
@@ -127,6 +127,11 @@ The following will use tbb mkl library ::
 
 ``-DTBB=ON`` can be combined with any ``-DOMP_LIB=...``.
 
+Complex mode
+^^^^^^^^^^^^
+
+For complex integrals / spin-orbit coupling (SOC), extra options ``-DUSE_COMPLEX=ON`` and ``-DUSE_SG=ON`` are required (and the compilation time will increase).
+
 Maximal bond dimension
 ^^^^^^^^^^^^^^^^^^^^^^
 
@@ -182,7 +187,7 @@ the same ``mpich`` library.
 Supported operating systems and compilers
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* Linux + gcc 9.2.0 + MKL 2019
+* Linux + gcc 9.2.0 + MKL 2021.4
 * MacOS 10.15 + Apple clang 12.0 + MKL 2021
 * MacOS 10.15 + icpc 2021.1 + MKL 2021
 * Windows 10 + Visual Studio 2019 (MSVC 14.28) + MKL 2021

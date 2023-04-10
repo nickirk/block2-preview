@@ -344,10 +344,12 @@ template <typename S, typename FL> struct Partition {
         vector<pair<S, shared_ptr<SparseMatrixInfo<S>>>> &to_op_infos) {
         assert(to_op_infos.size() == 0);
         to_op_infos.reserve(from_op_infos.size());
+        shared_ptr<VectorAllocator<uint32_t>> i_alloc =
+            make_shared<VectorAllocator<uint32_t>>();
         for (size_t i = 0; i < from_op_infos.size(); i++) {
             shared_ptr<SparseMatrixInfo<S>> info =
                 make_shared<SparseMatrixInfo<S>>(
-                    from_op_infos[i].second->deep_copy());
+                    from_op_infos[i].second->deep_copy(i_alloc));
             to_op_infos.push_back(make_pair(from_op_infos[i].first, info));
         }
     }

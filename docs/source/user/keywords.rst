@@ -62,7 +62,7 @@ mem_ratio
 
 min\_mpo\_mem
     Optional. Followed by auto, True, or False. If True, MPO building and simplification will cost much less memory.
-    But the computational cost will be higher due to IO cost. Default is auto, which is True if number of orbitals is >= 80.
+    But the computational cost will be higher due to IO cost. Default is auto, which is True if number of orbitals is >= 120.
 
 qc\_mpo\_type
     Optional. Followed by auto (default), conventional, nc, or cn. The Hamiltonian MPO formalism type.
@@ -158,11 +158,27 @@ onepdm / restart\_onepdm
 twopdm / restart\_twopdm
     Two-particle density matrix calculation on the DMRG optimized MPS or reloaded MPS.
 
+threepdm / restart\_threepdm
+    Three-particle density matrix calculation on the DMRG optimized MPS or reloaded MPS.
+    Cannot be used together with ``conventional_npdm``.
+
+fourpdm / restart\_fourpdm
+    Four-particle density matrix calculation on the DMRG optimized MPS or reloaded MPS.
+    Cannot be used together with ``conventional_npdm``.
+
 tran\_onepdm / restart\_tran\_onepdm
     One-particle transition density matrix among a set of MPSs.
 
 tran\_twopdm / restart\_tran\_twopdm
     Two-particle transition density matrix among a set of MPSs.
+
+tran\_threepdm / restart\_tran\_threepdm
+    Three-particle transition density matrix among a set of MPSs.
+    Cannot be used together with ``conventional_npdm``.
+
+tran\_fourpdm / restart\_tran\_fourpdm
+    Four-particle transition density matrix among a set of MPSs.
+    Cannot be used together with ``conventional_npdm``.
 
 tran\_oh / restart\_tran\_oh
     Operator overlap between each pair in a set of MPSs.
@@ -206,6 +222,17 @@ stopt\_compression
 stopt\_sampling
     Third step of stochastic perturbative DMRG. Followed by an integer as the number of CSF / determinants to be sampled.
     If any of the first and second step is done in the non-spin-adapted mode, the determinants will be sampled and this step must also be in the non-spin-adapted mode. Otherwise, CSF will be sampled if the keyword ``nonspinadapted`` is given, and determinants will be sampled if the keyword ``nonspinadapted`` is not given.
+
+restart\_nevpt2\_npdm
+    Compute 1-4 PDM for DMRG-SC-NEVPT2. If there are multiple roots, the calculation will be performed for all roots.
+    The 1-4PDM will be used to compute the SC-NEVPT2 intermediate Eqs. (A16) and (A22) in the spin-free NEVPT2 paper.
+    Only the two SC-NEVPT2 intermediates will be written into the disk.
+
+restart\_mps\_nevpt
+    Followed by three integers, representing the number of active, inactive, and external orbitals.
+    Compute the ``V_i`` and ``V_a`` correlation energy in DMRG-SC-NEVPT2 using MPS compression.
+    Only the spin-adapted version is implemented. If there are multiple roots, the keyword ``nevpt_state_num`` is
+    required to set which root should be used to compute the correlation energy.
 
 Calculation Modifiers
 ---------------------
@@ -289,9 +316,21 @@ big\_site
     with no big sites.
 
 expt\_algo\_type
-    Optional. Followed by a string ``auto``, ``fast``, or ``lowmem``. Default is ``auto``.
+    Optional. Followed by a string ``auto``, ``fast``, ``normal``, ``symbolfree``, or ``lowmem``. Default is ``auto``.
     This keyword can only be used with density matrix or transition density matrix calculations.
-    The default is ``auto``. ``lowmem`` uses less memory, but the complexity can be higher.
+    ``auto`` is ``fast`` if ``conventional_npdm`` is given, or ``symbolfree`` if ``conventional_npdm`` is not given.
+    ``normal`` uses less memory compared to ``fast``, but the complexity can be higher.
+    ``lowmem`` uses less memory compared to ``symbolfree``, but the complexity can be higher.
+    ``symbolfree`` is in general more efficient than ``fast`` and ``normal``,
+    but it is only available if ``conventional_npdm`` is not given.
+    For 3- and 4-particle density matrices, when this keyword is not ``auto`` or ``symbolfree``,
+    it may consume a significant large amount of memory to store the symbols.
+
+conventional\_npdm
+    Optional, mainly for backward compatibility. If given, will use the conventional manual npdm code.
+    This is only available for 1- and 2- particle density matrices.
+    For most cases, the conventional manual code is slower.
+    For soc 1-particle density matrix, only the conventional manual code is available.
 
 simple\_parallel
     Optional. Followed by an empty string (same as ``ij``) or ``ij`` or ``kl``. When this keyword is not given,
@@ -347,6 +386,10 @@ full\_integral
     ``mrrept2-r``), the two-electron integral elements with more than two virtual indices will be set to zero.
     This should save some MPO contruction time, without affecting the sweep time cost and accuracy.
     If this keyword is given, the full integral elements will be used for constructing MPO.
+
+nevpt\_state\_num
+    Followed by a single integer, the index of the root (counting from zero) used for SC-NEVPT2.
+    Only useful for the calculation type ``restart_mps_nevpt``.
 
 Uncontracted Dynamic Correlation
 --------------------------------
@@ -409,7 +452,7 @@ twodot
     Default. Using the two-site DMRG algorithm.
 
 twodot\_to\_onedot
-    Followed by a single number to indicate the sweep iteration when to switch from the two-site DMRG algorithm to the two-site DMRG algorithm. The sweep iteration is counted from zero.
+    Followed by a single number to indicate the sweep iteration when to switch from the two-site DMRG algorithm to the one-site DMRG algorithm. The sweep iteration is counted from zero.
 
 schedule
     Optional. Followed by the word ``default`` or a multi-line DMRG schedule with the last line being ``end``.

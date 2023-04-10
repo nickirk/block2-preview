@@ -20,7 +20,7 @@ import subprocess
 # -- Project information -----------------------------------------------------
 
 project = 'block2'
-copyright = '2021, Huanchen Zhai'
+copyright = '2023, Huanchen Zhai'
 author = 'Huanchen Zhai'
 
 
@@ -31,6 +31,7 @@ author = 'Huanchen Zhai'
 # ones.
 extensions = [
     "breathe",
+    "nbsphinx",
 ]
 
 breathe_projects = {"block2": "../build/doxygenxml/"}
@@ -62,6 +63,16 @@ html_logo = '_static/block2-logo-white.png'
 
 primary_domain = "cpp"
 highlight_language = "cpp"
+
+latex_elements = {
+    'papersize': 'letterpaper',
+    'pointsize': '11pt',
+    'preamble': r'''
+        \usepackage{charter}
+        \usepackage[defaultsans]{lato}
+        \usepackage{inconsolata}
+    '''
+}
 
 def generate_doxygen_xml(app):
     build_dir = os.path.join(app.confdir, "build")

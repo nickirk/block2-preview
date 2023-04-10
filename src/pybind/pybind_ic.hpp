@@ -261,9 +261,11 @@ template <typename S = void> void bind_wick(py::module &m) {
         .value("Nothing", WickIndexTypes::None)
         .value("Inactive", WickIndexTypes::Inactive)
         .value("Active", WickIndexTypes::Active)
+        .value("Single", WickIndexTypes::Single)
         .value("External", WickIndexTypes::External)
         .value("Alpha", WickIndexTypes::Alpha)
         .value("Beta", WickIndexTypes::Beta)
+        .value("ActiveSingle", WickIndexTypes::ActiveSingle)
         .value("AlphaBeta", WickIndexTypes::AlphaBeta)
         .value("InactiveAlpha", WickIndexTypes::InactiveAlpha)
         .value("ActiveAlpha", WickIndexTypes::ActiveAlpha)
@@ -333,6 +335,9 @@ template <typename S = void> void bind_wick(py::module &m) {
         .def_static("complete_set", &WickPermutation::complete_set)
         .def_static("non_symmetric", &WickPermutation::non_symmetric)
         .def_static("two_symmetric", &WickPermutation::two_symmetric)
+        .def_static("two_anti_symmetric", &WickPermutation::two_anti_symmetric)
+        .def_static("four_anti_symmetric",
+                    &WickPermutation::four_anti_symmetric)
         .def_static("qc_chem", &WickPermutation::qc_chem)
         .def_static("qc_phys", &WickPermutation::qc_phys)
         .def_static("four_anti", &WickPermutation::four_anti)
@@ -399,6 +404,8 @@ template <typename S = void> void bind_wick(py::module &m) {
                     py::arg("name") = string("D"))
         .def("get_spin_tag", &WickTensor::get_spin_tag)
         .def("set_spin_tag", &WickTensor::set_spin_tag)
+        .def("fermi_type_compare", &WickTensor::fermi_type_compare)
+        .def("fermi_type", &WickTensor::fermi_type)
         .def("sort",
              [](WickTensor *self) {
                  double factor = 1.0;

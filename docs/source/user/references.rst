@@ -4,7 +4,7 @@ References
 
 A detailed description of the parallel DMRG algorithm implemented in **block2** can be found in the following paper
 
-* Zhai, H., Chan, G. K. Low communication high performance ab initio density matrix renormalization group algorithms. *The Journal of Chemical Physics* 2021, **154**, 224116.
+* Zhai, H., Chan, G. K. L. Low communication high performance ab initio density matrix renormalization group algorithms. *The Journal of Chemical Physics* 2021, **154**, 224116.
 
 Please cite this paper if you find **block2** useful in your research.
 For the large site code, please cite 
@@ -28,7 +28,7 @@ Parallelization
 * Chan, G. K.-L. An algorithm for large scale density matrix renormalization group calculations. *The Journal of Chemical Physics* 2004, **120**, 3172–3178. doi: `10.1063/1.1638734 <https://doi.org/10.1063/1.1638734>`_
 * Chan, G. K.-L.; Keselman, A.; Nakatani, N.; Li, Z.; White, S. R. Matrix product operators, matrix product states, and ab initio density matrix renormalization group  algorithms. *The Journal of Chemical Physics* 2016, **145**, 014102. doi: `10.1063/1.4955108 <https://doi.org/10.1063/1.4955108>`_
 * Stoudenmire, E.; White, S. R. Real-space parallel density matrix renormalization group. *Physical Review B* 2013, **87**, 155137. doi: `10.1103/PhysRevB.87.155137 <https://doi.org/10.1103/PhysRevB.87.155137>`_
-* Zhai, H., Chan, G. K. Low communication high performance ab initio density matrix renormalization group algorithms. *The Journal of Chemical Physics* 2021, **154**, 224116. doi: `10.1063/5.0050902 <https://doi.org/10.1063/5.0050902>`_
+* Zhai, H., Chan, G. K. L. Low communication high performance ab initio density matrix renormalization group algorithms. *The Journal of Chemical Physics* 2021, **154**, 224116. doi: `10.1063/5.0050902 <https://doi.org/10.1063/5.0050902>`_
 
 Spin-Orbit Coupling
 -------------------
@@ -46,7 +46,12 @@ Finite-Temperature DMRG
 -----------------------
 
 * Feiguin, A. E., White, S. R. Finite-temperature density matrix renormalization using an enlarged Hilbert space. *Physical Review B* 2005, **72**, 220401. doi: `10.1103/PhysRevB.72.220401 <https://doi.org/10.1103/PhysRevB.72.220401>`_
+
+Time-Dependent DMRG
+-------------------
+
 * Feiguin, A. E., White, S. R. Time-step targeting methods for real-time dynamics using the density matrix renormalization group. *Physical Review B* 2005, **72**, 020404. doi: `10.1103/PhysRevB.72.020404 <https://doi.org/10.1103/PhysRevB.72.020404>`_
+* Haegeman, J., Lubich, C., Oseledets, I., Vandereycken, B., Verstraete, F. Unifying time evolution and optimization with matrix product states. *Physical Review B* 2016, **94**, 165116. doi: `10.1103/PhysRevB.94.165116 <https://doi.org/10.1103/PhysRevB.94.165116>`_
 
 Linear Response
 ---------------
@@ -63,6 +68,20 @@ Particle Density Matrix
 -----------------------
 
 * Ghosh, D., Hachmann, J., Yanai, T., Chan, G. K. L. Orbital optimization in the density matrix renormalization group, with applications to polyenes and β-carotene. *The Journal of Chemical Physics* 2008, **128**, 144117. doi: `10.1063/1.2883976 <https://doi.org/10.1063/1.2883976>`_
+* Guo, S., Watson, M. A., Hu, W., Sun, Q., Chan, G. K. L. N-electron valence state perturbation theory based on a density matrix renormalization group reference function, with applications to the chromium dimer and a trimer model of poly (p-phenylenevinylene). *Journal of Chemical Theory and Computation* 2016, **12**, 1583-1591. doi: `10.1021/acs.jctc.5b01225 <https://doi.org/10.1021/acs.jctc.5b01225>`_
+
+DMRG-SC-NEVPT2
+--------------
+
+* Roemelt, M., Guo, S., Chan, G. K. L. A projected approximation to strongly contracted N-electron valence perturbation theory for DMRG wavefunctions. *The Journal of Chemical Physics* 2016, **144**, 204113. doi: `10.1063/1.4950757 <https://doi.org/10.1063/1.4950757>`_
+* Sokolov, A. Y., Guo, S., Ronca, E., Chan, G. K. L. Time-dependent N-electron valence perturbation theory with matrix product state reference wavefunctions for large active spaces and basis sets: Applications to the chromium dimer and all-trans polyenes. *The Journal of Chemical Physics* 2017, **146**, 244102. doi: `10.1063/1.4986975 <https://doi.org/10.1063/1.4986975>`_
+
+DMRG-CASPT2
+-----------
+
+* Kurashige, Y., Yanai, T. Second-order perturbation theory with a density matrix renormalization group self-consistent field reference function: Theory and application to the study of chromium dimer. *The Journal of Chemical Physics* 2011, **135**, 094104. doi: `10.1063/1.3629454 <https://doi.org/10.1063/1.3629454>`_
+* Wouters, S., Van Speybroeck, V., Van Neck, D. DMRG-CASPT2 study of the longitudinal static second hyperpolarizability of all-trans polyenes. *The Journal of Chemical Physics* 2016, **145**, 054120. doi: `10.1063/1.4959817 <https://doi.org/10.1063/1.4959817>`_
+* Nakatani, N., Guo, S. Density matrix renormalization group (DMRG) method as a common tool for large active-space CASSCF/CASPT2 calculations. *The Journal of Chemical Physics* 2017, **146**, 094102. doi: `10.1063/1.4976644 <https://doi.org/10.1063/1.4976644>`_
 
 Multi-Reference Correlation Theories
 ------------------------------------

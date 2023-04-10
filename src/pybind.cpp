@@ -312,6 +312,12 @@ PYBIND11_MODULE(block2, m) {
     bind_fl_sci_big_site_fock<SZ, double>(m_sz);
 
     bind_fl_csf_big_site<SU2, double>(m_su2);
+
+    bind_drt_big_site<SZ>(m_sz);
+    bind_drt_big_site<SU2>(m_su2);
+
+    bind_fl_drt_big_site<SZ, double>(m_sz);
+    bind_fl_drt_big_site<SU2, double>(m_su2);
 #endif
 
 #ifdef _USE_SP_DMRG

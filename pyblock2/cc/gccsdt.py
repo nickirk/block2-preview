@@ -28,7 +28,6 @@ except ImportError:
     raise RuntimeError("block2 needs to be compiled with '-DUSE_IC=ON'!")
 
 import itertools
-from telnetlib import KERMIT
 import numpy as np
 
 
@@ -430,9 +429,9 @@ if __name__ == "__main__":
     wccsdt = GCCSDT(mf).run()
     # wccsdtq = GCCSDTQ(mf).run()
 
-    # 1...   3.880 sec
-    # 2...  15.781 sec
-    # 3... 102.674 sec
+    # 1...   3.880 sec ->  0.647 sec
+    # 2...  15.781 sec ->  2.584 sec
+    # 3... 102.674 sec -> 14.604 sec
     # pvdz basis / 204 sec per iter
     # E(HF)     = -76.0167894720743
     # E(GCCSD)  = -76.23486336279412

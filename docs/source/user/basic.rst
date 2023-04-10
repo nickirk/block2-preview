@@ -57,14 +57,48 @@ Integral Generation
 In the following we will use the C\ :sub:`2` molecule to demonstrate the ``block2`` features.
 Integrals and orbitals should be supplied externally in the Molpro's FCIDUMP format.
 The integral file for C\ :sub:`2` can be found in ``${BLOCK2HOME}/data/C2.CAS.PVDZ.FCIDUMP.ORIG`` or
-generated using the following ``pyscf`` script: ::
+generated using the following script (only the RHF case is required): ::
+
+    from pyscf import gto, scf, mcscf
+    from pyblock2._pyscf.ao2mo import integrals as itg
+    from pyblock2.driver.core import DMRGDriver, SymmetryTypes
+
+    mol = gto.M(atom='C 0 0 0; C 0 0 1.2425', basis='ccpvdz', symmetry='d2h')
+
+    # RHF case (for spin-adapted / non-spin-adapted DMRG)
+    mf = scf.RHF(mol).run()
+    mc = mcscf.CASCI(mf, 26, 8)
+    ncas, n_elec, spin, ecore, h1e, g2e, orb_sym = itg.get_rhf_integrals(mf, mc.ncore, mc.ncas, g2e_symm=8)
+    driver = DMRGDriver(scratch="./tmp", symm_type=SymmetryTypes.SU2)
+    driver.initialize_system(n_sites=ncas, n_elec=n_elec, spin=spin, orb_sym=orb_sym)
+    driver.write_fcidump(h1e, g2e, ecore=ecore, filename='./FCIDUMP', pg="d2h", h1e_symm=True)
+
+    # UHF case (for non-spin-adapted DMRG only)
+    mf = scf.UHF(mol).run()
+    mc = mcscf.UCASCI(mf, 26, 8)
+    ncas, n_elec, spin, ecore, h1e, g2e, orb_sym = itg.get_uhf_integrals(mf, mc.ncore[0], mc.ncas, g2e_symm=8)
+    driver = DMRGDriver(scratch="./tmp", symm_type=SymmetryTypes.SZ)
+    driver.initialize_system(n_sites=ncas, n_elec=n_elec, spin=spin, orb_sym=orb_sym)
+    driver.write_fcidump(h1e, g2e, ecore=ecore, filename='./FCIDUMP.UHF', pg="d2h", h1e_symm=True)
+
+Alternatively, the integral file can be generated using the ``pyscf/dmrgscf`` interface: ::
 
     from pyscf import gto, scf, mcscf, dmrgscf
+    import os
+
+    dmrgscf.settings.BLOCKEXE = os.popen("which block2main").read().strip()
+    dmrgscf.settings.MPIPREFIX = ''
+
     mol = gto.M(atom='C 0 0 0; C 0 0 1.2425', basis='ccpvdz', symmetry=1)
     mf = scf.RHF(mol).run()
     mc = mcscf.CASCI(mf, 26, 8)
     mc.fcisolver = dmrgscf.DMRGCI(mol)
+    mc.canonicalization = False
     dmrgscf.dryrun(mc)
+
+.. note ::
+
+    Please see :ref:`user_dmrgscf` for the instruction for the installation of ``pyscf/dmrgscf``.
 
 .. highlight:: bash
 
@@ -84,13 +118,25 @@ The following input file can be used to compute the ground state energy: ::
     schedule default
     maxM 500
     maxiter 30
+    num_thrds 16
 
 .. note ::
 
     Note that the integral file ``C2.CAS.PVDZ.FCIDUMP.ORIG`` should be in the working direcotry.
-    By default, the orbitals will be reordered using the ``fiedler`` method.
+    By default, the orbitals will be reordered using the ``fiedler`` method. One can optionally
+    add the keyword ``noreorder`` to avoid orbital reordering.
 
-.. note ::
+    ``num_thrds`` indicates the number of OpenMP threads (shared-memory parallelism) to use.
+
+    ``hf_occ integral`` has no effects in ``block2``, but it is required in ``StackBlock``.
+    If this line appear, ``block2main`` will try to write some output files in a stackblock-compatible format.
+
+    By default, the calculation will be done in the spin-adapted mode, which is the most efficient.
+    One can optionally add the keyword ``nonspinadapted`` to use the non-spin-adapted mode.
+
+    The keyword ``prefix <scratch dir>`` can be used to set a folder for storing scratch files.
+    If running in a HPC supercomputer, it is highly recommended to use the high IO speed scratch space
+    (instead of the "home" storage) to achieve high performance.
 
     Lines start with ``!`` in the input file will be ignored. [#note1]_
 
@@ -446,8 +492,8 @@ This will generate the following output: ::
 n-Particle Reduced Density Matrix
 ---------------------------------
 
-The 1- and 2-particle DMRG reduced density matrix for a particular state can be calculated using
-the keywords ``onepdm`` and ``twopdm``.
+The 1-, 2-, 3-, and 4-particle DMRG reduced density matrix for a particular state can be calculated using
+the keywords ``onepdm``, ``twopdm``, ``threepdm`` and ``fourpdm``.
 The reduced density matrix calculation can be done with either ``onedot`` or ``twodot`` keywords. [#note1]_
 
 .. note ::
@@ -456,8 +502,9 @@ The reduced density matrix calculation can be done with either ``onedot`` or ``t
     during the sweep.
 
 Density matrices of the :math:`n`-th state are calculated and stored in a ``numpy`` binary file
-named ``1pdm-n-n.npy``, ``2pdm-n-n.npy`` (in the scratch folder), respectively, starting with ``n = 0``.
-If there is only one root, the files are named ``1pdm.npy``, ``2pdm.npy``, respectively.
+named ``1pdm-n-n.npy``, ``2pdm-n-n.npy``, ``3pdm-n-n.npy``, etc. (in the scratch folder), respectively,
+starting with ``n = 0``.
+If there is only one root, the files are named ``1pdm.npy``, ``2pdm.npy``, ``3pdm.npy``, etc. respectively.
 
 The following input file computes the energy and 2-particle density matrix for the ground state: ::
 
@@ -468,12 +515,12 @@ The following input file computes the energy and 2-particle density matrix for t
     spin 0
     irrep 1
 
-    hf_occ integral
     schedule default
     maxM 500
     maxiter 30
 
     twopdm
+    num_thrds 16
     
 .. highlight:: python3
 
@@ -483,12 +530,6 @@ The 2-particle density matrix file can be loaded using the following python scri
     >>> _2pdm = np.load('./nodex/2pdm.npy')
     >>> print(_2pdm.shape)
     (3, 26, 26, 26, 26)
-
-where the three components with indicies :math:`[:, p, q, r, s]` are for
-:math:`\langle a^\dagger_{p\alpha} a^\dagger_{q\alpha} a_{r\alpha} a_{s\alpha} \rangle`,
-:math:`\langle a^\dagger_{p\alpha} a^\dagger_{q\beta} a_{r\beta} a_{s\alpha} \rangle`,
-and :math:`\langle a^\dagger_{p\beta} a^\dagger_{q\beta} a_{r\beta} a_{s\beta} \rangle`,
-respectively.
 
 .. highlight:: bash
 
@@ -504,12 +545,12 @@ state-averaged A\ :sub:`1g` states: ::
     nroots 2
     weights 0.5 0.5
 
-    hf_occ integral
     schedule default
     maxM 500
     maxiter 30
 
     twopdm
+    num_thrds 16
     
 .. highlight:: python3
 
@@ -521,16 +562,67 @@ The 2-particle density matrix file for the first state can be loaded using the f
     >>> print(_2pdm.shape)
     (3, 26, 26, 26, 26)
 
+The 1-particle density matrix (in both the non-spin-adapted and spin-adapted mode) is stored as an array with the shape :math:`[2,n,n]`,
+where ``n`` is the number of spatial orbitals, and the two components with indicies :math:`[:,a,b]` are for
+:math:`\langle a^\dagger_{a\alpha} a_{b\alpha} \rangle`, and :math:`\langle a^\dagger_{a\beta} a_{b\beta} \rangle`,
+respectively.
+
+The 2-particle density matrix (in both the non-spin-adapted and spin-adapted mode) is stored as an array with the shape :math:`[3,n,n,n,n]`,
+where the three components with indicies :math:`[:,a,b,c,d]` are for
+:math:`\langle a^\dagger_{a\alpha} a^\dagger_{b\alpha} a_{c\alpha} a_{d\alpha} \rangle`,
+:math:`\langle a^\dagger_{a\alpha} a^\dagger_{b\beta} a_{c\beta} a_{d\alpha} \rangle`,
+and :math:`\langle a^\dagger_{a\beta} a^\dagger_{b\beta} a_{c\beta} a_{d\beta} \rangle`,
+respectively.
+
+The 3-particle density matrix in the spin-adapted mode is stored as the spin-traced format
+with the shape :math:`[n,n,n,n,n,n]`, defined as
+
+.. math::
+
+    \text{3pdm}[a, b, c, d, e, f] := \sum_{\sigma\tau\lambda}
+        a^\dagger_{a\sigma} a^\dagger_{b\tau} a^\dagger_{c\lambda} a_{d\lambda} a_{e\tau} a_{f\sigma}
+
+The 3-particle density matrix in the non-spin-adapted mode is stored as an array with the shape :math:`[4,n,n,n,n,n,n]`,
+where the four components with indicies :math:`[:,a,b,c,d,e,f]` are for
+:math:`\langle a^\dagger_{a\alpha} a^\dagger_{b\alpha} a^\dagger_{c\alpha} a_{d\alpha}a_{e\alpha} a_{f\alpha} \rangle`,
+:math:`\langle a^\dagger_{a\alpha} a^\dagger_{b\alpha} a^\dagger_{c\beta} a_{d\beta}a_{e\alpha} a_{f\alpha} \rangle`,
+:math:`\langle a^\dagger_{a\alpha} a^\dagger_{b\beta} a^\dagger_{c\beta} a_{d\beta}a_{e\beta} a_{f\alpha} \rangle`,
+and :math:`\langle a^\dagger_{a\beta} a^\dagger_{b\beta} a^\dagger_{c\beta} a_{d\beta}a_{e\beta} a_{f\beta} \rangle`,
+respectively.
+
+The 4-particle density matrix in the spin-adapted mode is stored as the spin-traced format
+with the shape :math:`[n,n,n,n,n,n,n,n]`, defined as
+
+.. math::
+
+    \text{4pdm}[a, b, c, d, e, f, g, h] := \sum_{\sigma\tau\lambda\mu}
+        a^\dagger_{a\sigma} a^\dagger_{b\tau} a^\dagger_{c\lambda} a^\dagger_{d\mu} a_{e\mu}a_{f\lambda} a_{g\tau} a_{h\sigma}
+
+The 4-particle density matrix in the non-spin-adapted mode is stored as an array with the shape :math:`[5,n,n,n,n,n,n,n,n]`,
+where the five components with indicies :math:`[:,a,b,c,d,e,f,g,h]` are for
+:math:`\langle a^\dagger_{a\alpha} a^\dagger_{b\alpha} a^\dagger_{c\alpha} a^\dagger_{d\alpha} a_{e\alpha} a_{f\alpha} a_{g\alpha} a_{h\alpha} \rangle`,
+:math:`\langle a^\dagger_{a\alpha} a^\dagger_{b\alpha} a^\dagger_{c\alpha} a^\dagger_{d\beta} a_{e\beta} a_{f\alpha} a_{g\alpha} a_{h\alpha} \rangle`,
+:math:`\langle a^\dagger_{a\alpha} a^\dagger_{b\alpha} a^\dagger_{c\beta} a^\dagger_{d\beta} a_{e\beta} a_{f\beta} a_{g\alpha} a_{h\alpha} \rangle`,
+:math:`\langle a^\dagger_{a\alpha} a^\dagger_{b\beta} a^\dagger_{c\beta} a^\dagger_{d\beta} a_{e\beta} a_{f\beta} a_{g\beta} a_{h\alpha} \rangle`,
+and :math:`\langle a^\dagger_{a\beta} a^\dagger_{b\beta} a^\dagger_{c\beta} a^\dagger_{d\beta} a_{e\beta} a_{f\beta} a_{g\beta} a_{h\beta} \rangle`,
+respectively.
+
+In the general spin orbital mode (with the keyword ``use_general_spin``), the 1-, 2-, 3-, and 4-particle density matrices are stored
+with the shape :math:`[1,n,n]`, :math:`[1,n,n,n,n]`, :math:`[1,n,n,n,n,n,n]`, and :math:`[1,n,n,n,n,n,n,n,n]` respectively,
+where ``n`` is the number of spin orbitals. The content is the expectation value for :math:`\langle a^\dagger_{a} a_{b} \rangle`,
+:math:`\langle a^\dagger_{a} a^\dagger_{b} a_{c} a_{d} \rangle`, :math:`\langle a^\dagger_{a} a^\dagger_{b} a^\dagger_{c} a_{d} a_{e} a_{f} \rangle`,
+and :math:`\langle a^\dagger_{a} a^\dagger_{b} a^\dagger_{c} a^\dagger_{d} a_{e} a_{f} a_{g} a_{h} \rangle`, respectively.
+
 .. highlight:: bash
 
 n-Particle Transition Reduced Density Matrix
 --------------------------------------------
 
-The 1- and 2-particle DMRG transition density matrix can be calculated using
-the keywords ``tran_onepdm`` and ``tran_twopdm``.
+The 1-, 2-, 3- and 4-particle DMRG transition density matrix can be calculated using
+the keywords ``tran_onepdm``, ``tran_twopdm``, ``tran_threepdm`` and ``tran_fourpdm``.
 
 Transition density matrices between the :math:`m`-th (bra) and :math:`n`-th (ket) states are calculated and stored in a ``numpy`` binary file
-named ``1pdm-m-n.npy``, ``2pdm-m-n.npy`` (in the scratch folder), respectively, starting with ``m = n = 0``.
+named ``1pdm-m-n.npy``, ``2pdm-m-n.npy``, etc. (in the scratch folder), respectively, starting with ``m = n = 0``.
 
 The following input file computes the 2-particle transition density matrix for two
 state-averaged A\ :sub:`1g` states: ::
@@ -544,12 +636,12 @@ state-averaged A\ :sub:`1g` states: ::
     nroots 2
     weights 0.5 0.5
 
-    hf_occ integral
     schedule default
     maxM 500
     maxiter 30
 
     tran_twopdm
+    num_thrds 16
 
 .. note ::
 
@@ -568,12 +660,12 @@ refined A\ :sub:`1g` states: ::
     weights 0.5 0.5
     statespecific
 
-    hf_occ integral
     schedule default
     maxM 500
     maxiter 30
 
     tran_twopdm
+    num_thrds 16
 
 The transition density matrices between states with different point group irreducible representations are also available by simply
 adding the keyword ``tran_twopdm`` after the corresponding multi-target state-averaged calculation. [#note1]_

@@ -1,6 +1,6 @@
 
 #  block2: Efficient MPO implementation of quantum chemistry DMRG
-#  Copyright (C) 2020-2021 Huanchen Zhai <hczhai@caltech.edu>
+#  Copyright (C) 2020-2023 Huanchen Zhai <hczhai@caltech.edu>
 #
 #  This program is free software: you can redistribute it and/or modify
 #  it under the terms of the GNU General Public License as published by
@@ -62,6 +62,11 @@ def init_parsers():
     perm_map[("raa", 4)] = WickPermutation.pair_anti_symmetric(2)
     perm_map[("rbb", 4)] = WickPermutation.pair_anti_symmetric(2)
     perm_map[("rab", 4)] = WickPermutation.non_symmetric()
+    perm_map[("la", 2)] = WickPermutation.non_symmetric()
+    perm_map[("lb", 2)] = WickPermutation.non_symmetric()
+    perm_map[("laa", 4)] = WickPermutation.pair_anti_symmetric(2)
+    perm_map[("lbb", 4)] = WickPermutation.pair_anti_symmetric(2)
+    perm_map[("lab", 4)] = WickPermutation.non_symmetric()
 
     p = lambda x: WickExpr.parse(x, idx_map, perm_map)
     pt = lambda x: WickTensor.parse(x, idx_map, perm_map)
@@ -457,6 +462,36 @@ class WickUCCSD(uccsd.UCCSD):
         from pyblock2.cc.eom_uccsd import WickUEOMEESpinKeep
         return WickUEOMEESpinKeep(self).kernel(nroots, koopmans, guess, eris)
 
+    def solve_lambda(self, t1=None, t2=None, l1=None, l2=None, eris=None):
+        from pyblock2.cc.lambda_uccsd import wick_kernel
+        if t1 is None: t1 = self.t1
+        if t2 is None: t2 = self.t2
+        if eris is None: eris = self.ao2mo(self.mo_coeff)
+        self.converged_lambda, self.l1, self.l2 = \
+            wick_kernel(self, eris, t1, t2, l1, l2,
+                                max_cycle=self.max_cycle,
+                                tol=self.conv_tol_normt,
+                                verbose=self.verbose)
+        return self.l1, self.l2
+
+    def make_rdm1(self, t1=None, t2=None, l1=None, l2=None, **kwargs):
+        from pyblock2.cc.rdm_uccsd import wick_make_rdm1
+        if t1 is None: t1 = self.t1
+        if t2 is None: t2 = self.t2
+        if l1 is None: l1 = self.l1
+        if l2 is None: l2 = self.l2
+        if l1 is None: l1, l2 = self.solve_lambda(t1, t2)
+        return wick_make_rdm1(self, t1, t2, l1, l2, **kwargs)
+
+    def make_rdm2(self, t1=None, t2=None, l1=None, l2=None, **kwargs):
+        from pyblock2.cc.rdm_uccsd import wick_make_rdm2
+        if t1 is None: t1 = self.t1
+        if t2 is None: t2 = self.t2
+        if l1 is None: l1 = self.l1
+        if l2 is None: l2 = self.l2
+        if l1 is None: l1, l2 = self.solve_lambda(t1, t2)
+        return wick_make_rdm2(self, t1, t2, l1, l2, **kwargs)
+
 UCCSD = WickUCCSD
 
 if __name__ == "__main__":
@@ -469,8 +504,18 @@ if __name__ == "__main__":
     print('E-ee = ', ccsd.eomee_ccsd()[0])
     print('E-ip (right) = ', ccsd.ipccsd()[0])
     print('E-ea (right) = ', ccsd.eaccsd()[0])
+    l1, l2 = ccsd.solve_lambda()
+    dm1 = ccsd.make_rdm1()
+    dm2 = ccsd.make_rdm2()
     wccsd = WickUCCSD(mf).run()
     print('E(T) = ', wccsd.ccsd_t())
     print('E-ee = ', wccsd.eomee_ccsd()[0])
     print('E-ip (right) = ', wccsd.ipccsd()[0])
     print('E-ea (right) = ', wccsd.eaccsd()[0])
+    wl1, wl2 = wccsd.solve_lambda()
+    print('lambda diff1 = ', [np.linalg.norm(np.array(l) - np.array(wl)) for l, wl in zip(l1, wl1)])
+    print('lambda diff2 = ', [np.linalg.norm(np.array(l) - np.array(wl)) for l, wl in zip(l2, wl2)])
+    wdm1 = wccsd.make_rdm1()
+    wdm2 = wccsd.make_rdm2()
+    print('dm diff1 = ', [np.linalg.norm(np.array(dm) - np.array(wdm)) for dm, wdm in zip(dm1, wdm1)])
+    print('dm diff2 = ', [np.linalg.norm(np.array(dm) - np.array(wdm)) for dm, wdm in zip(dm2, wdm2)])
